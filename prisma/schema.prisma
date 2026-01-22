@@ -1,0 +1,87 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  resumes Resume[]
+  tokens  Token[]
+
+  @@map("users")
+}
+
+model Resume {
+  id                    Int       @id @default(autoincrement())
+  userId                Int       @map("user_id")
+  resumeId              String    @unique @map("resume_id")
+  filename              String
+  displayName           String?   @map("display_name") // User-friendly name
+  cloudinaryUrl         String    @map("cloudinary_url")
+  cloudinaryPublicId    String    @map("cloudinary_public_id")
+  parsedContent         Json?     @map("parsed_content")
+  tailoredDocxUrl       String?   @map("tailored_docx_url")
+  tailoredPdfUrl        String?   @map("tailored_pdf_url")
+  tailoredResumeText    String?   @map("tailored_resume_text") @db.Text
+  coverLetter           String?   @map("cover_letter") @db.Text
+  downloadUrls          Json?     @map("download_urls")
+  isDefault             Boolean   @default(false) @map("is_default") // Default resume for AI
+  folder                String?   // Folder/group name (optional)
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions ResumeVersion[] // Resume versions/edits
+
+  @@index([userId])
+  @@index([resumeId])
+  @@index([userId, isDefault])
+  @@map("resumes")
+}
+
+model ResumeVersion {
+  id                    Int       @id @default(autoincrement())
+  resumeId              Int       @map("resume_id")
+  versionName           String?   @map("version_name") // Optional version name
+  tailoredResumeText    String    @map("tailored_resume_text") @db.Text
+  coverLetter           String?   @map("cover_letter") @db.Text
+  tailoredDocxUrl       String?   @map("tailored_docx_url")
+  tailoredPdfUrl        String?   @map("tailored_pdf_url")
+  downloadUrls          Json?     @map("download_urls")
+  isCurrent             Boolean   @default(false) @map("is_current") // Current version being edited
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  resume Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@index([resumeId])
+  @@index([resumeId, isCurrent])
+  @@map("resume_versions")
+}
+
+model Token {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("tokens")
+}

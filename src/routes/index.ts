@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { AuthController } from '../controllers/auth.controller';
 import { ResumeController } from '../controllers/resume.controller';
+import { FeedbackController } from '../controllers/feedback.controller';
 import { authenticate } from '../middleware/auth';
 import { ApiResponseFormatter } from '../utils/response';
 import logger from '../utils/logger';
@@ -9,6 +10,7 @@ import logger from '../utils/logger';
 const router = Router();
 const authController = new AuthController();
 const resumeController = new ResumeController();
+const feedbackController = new FeedbackController();
 
 // Configure multer for file uploads
 const upload = multer({
@@ -97,5 +99,8 @@ router.post('/update-resume-name', authenticate, (req, res) => resumeController.
 
 // POST /api/delete-resume - Delete resume
 router.post('/delete-resume', authenticate, (req, res) => resumeController.deleteResume(req, res));
+
+// POST /api/submit-feedback - Submit user feedback
+router.post('/submit-feedback', authenticate, (req, res) => feedbackController.submitFeedback(req, res));
 
 export default router;

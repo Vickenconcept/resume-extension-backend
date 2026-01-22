@@ -6,6 +6,7 @@ import { OpenAIService } from '../services/openai.service';
 import { ResumeParserService } from '../services/resumeParser.service';
 import { FileUploadService } from '../services/fileUpload.service';
 import { DocumentService } from '../services/document.service';
+import { QualityService } from '../services/quality.service';
 
 const prisma = new PrismaClient();
 const openAIService = new OpenAIService();
@@ -163,6 +164,23 @@ export class ResumeController {
       const fullTailoredResume = tailoredContent.fullResume || '';
       const coverLetter = tailoredContent.coverLetter || '';
 
+      // Quality validation and similarity scoring
+      const qualityService = new QualityService();
+      const qualityScore = qualityService.validateContent(
+        resumeContent,
+        fullTailoredResume,
+        jobDescription,
+        generateFreelyMode
+      );
+
+      // Calculate similarity metrics using AI-powered semantic analysis
+      const originalResumeText = resumeContent.raw_text || '';
+      const similarityMetrics = await qualityService.calculateSimilarity(
+        fullTailoredResume || originalResumeText,
+        jobDescription,
+        generateFreelyMode // Pass the mode so AI can adjust scoring
+      );
+
       // Generate documents
       const docGenStartTime = Date.now();
       logger.info('Generating tailored resume documents...');
@@ -239,15 +257,21 @@ export class ResumeController {
         downloadUrls.pdf = pdfUrl;
       }
 
+      // Prepare update data - use type assertion to bypass TypeScript errors
+      // until Prisma client is regenerated
+      const updateData = {
+        downloadUrls: downloadUrls as any,
+        tailoredDocxUrl: docxUrl,
+        tailoredPdfUrl: pdfUrl || null,
+        tailoredResumeText: fullTailoredResume,
+        coverLetter,
+        qualityScore: qualityScore as any,
+        similarityMetrics: similarityMetrics as any,
+      } as any; // Type assertion to allow fields that exist in DB but not yet in Prisma client
+
       await prisma.resume.update({
         where: { id: resume.id },
-        data: {
-          downloadUrls: downloadUrls as any,
-          tailoredDocxUrl: docxUrl,
-          tailoredPdfUrl: pdfUrl || null,
-          tailoredResumeText: fullTailoredResume,
-          coverLetter,
-        },
+        data: updateData,
       });
 
       const docGenTime = Date.now();
@@ -266,6 +290,8 @@ export class ResumeController {
           fullDocument: fullTailoredResume,
           coverLetter,
           downloadUrls,
+          qualityScore,
+          similarityMetrics,
         },
         'Resume tailored successfully'
       );

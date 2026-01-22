@@ -38,6 +38,8 @@ model Resume {
   tailoredResumeText    String?   @map("tailored_resume_text") @db.Text
   coverLetter           String?   @map("cover_letter") @db.Text
   downloadUrls          Json?     @map("download_urls")
+  qualityScore          Json?     @map("quality_score") // Quality validation scores
+  similarityMetrics     Json?     @map("similarity_metrics") // Similarity scores and keywords
   isDefault             Boolean   @default(false) @map("is_default") // Default resume for AI
   folder                String?   // Folder/group name (optional)
   createdAt             DateTime  @default(now()) @map("created_at")

@@ -30,7 +30,11 @@ export class OpenAIService {
       // Format resume content
       const formatStartTime = Date.now();
       const resumeText = this.formatResumeContent(resumeContent);
-      const prompt = this.buildTailoringPrompt(resumeText, jobDescription, generateFreely);
+      
+      // Extract keywords from job description for better matching
+      const jobKeywords = this.extractImportantKeywords(jobDescription);
+      
+      const prompt = this.buildTailoringPrompt(resumeText, jobDescription, generateFreely, jobKeywords);
 
       const formatTime = Date.now();
       logger.info('OpenAI: Resume formatted and prompt built', {
@@ -148,37 +152,79 @@ export class OpenAIService {
     return text;
   }
 
+  /**
+   * Extract important keywords from job description
+   */
+  private extractImportantKeywords(jobDescription: string): string[] {
+    // Remove common stop words and extract meaningful terms
+    const stopWords = new Set([
+      'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been', 'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'may', 'might', 'must', 'can', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'what', 'which', 'who', 'whom', 'whose', 'where', 'when', 'why', 'how', 'all', 'each', 'every', 'both', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very'
+    ]);
+
+    const normalized = jobDescription
+      .toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .replace(/\s+/g, ' ');
+
+    const words = normalized
+      .split(' ')
+      .filter(word => word.length >= 3 && !stopWords.has(word) && !/^\d+$/.test(word));
+
+    // Count frequency and return unique keywords
+    const keywordSet = new Set<string>();
+    words.forEach(word => {
+      if (word.length >= 3) {
+        keywordSet.add(word);
+      }
+    });
+
+    return Array.from(keywordSet).slice(0, 100); // Limit to top 100 keywords
+  }
+
   private buildTailoringPrompt(
     resumeText: string,
     jobDescription: string,
-    generateFreely: boolean
+    generateFreely: boolean,
+    jobKeywords: string[] = []
   ): string {
     if (generateFreely) {
       return `You are helping a job seeker tailor their resume to a specific job description and generate a professional cover letter.
 
-CRITICAL RULES FOR FLEXIBLE MODE (100% MATCH MODE):
-1. Your goal is to make the user meet 100% of the job requirements - add any missing skills, tools, or experiences that are required by the job
-2. BASE everything on the user's actual resume, but ENHANCE aggressively:
+CRITICAL RULES FOR FLEXIBLE MODE (100% MATCH MODE - TARGET 95-99% SEMANTIC ATS MATCH):
+1. YOUR PRIMARY GOAL: Achieve 95-99% semantic match with the job description. This is MANDATORY - the resume MUST score at least 95% match. Modern ATS systems use semantic understanding, not just exact keyword counting.
+2. AGGRESSIVE SEMANTIC MATCHING STRATEGY:
+   - Include high-impact keywords: skills, tools, technologies, certifications, methodologies
+   - Use semantic synonyms: "hardware engineering" = "electronic design", "cloud computing" = "AWS/Azure/GCP"
+   - Match concepts, not just words: "team leadership" matches "managed team" or "led team"
+   - IGNORE noise: filler words, dates, locations, job board boilerplate ("posted", "apply", "weeks ago")
+3. BASE everything on the user's actual resume, but ENHANCE aggressively:
    - If the job requires a skill/tool that's not in the resume, ADD it to the skills section (you can infer the user likely has exposure to it based on their background)
    - If the job requires experience with something not explicitly mentioned, ADD it to relevant experience bullets
    - If the user has similar experience, REFRAME it to match exactly what the job requires
-3. ADD all relevant keywords, skills, tools, and technologies from the job description to the resume
-4. ENHANCE experience bullets to include job-required skills and achievements
-5. You may ADD new skills, tools, or technologies that are required by the job but missing from the resume
-6. You may ENHANCE experience descriptions to include job-required responsibilities and achievements
+4. KEYWORD INCLUSION STRATEGY:
+   - Extract ALL important keywords from the job description (technologies, tools, methodologies, skills, certifications)
+   - Include these keywords NATURALLY throughout the resume: in summary, skills section, experience bullets, and project descriptions
+   - Use the EXACT terminology from the job description (e.g., if job says "LLMs", use "LLMs" not "large language models")
+   - Repeat important keywords 2-3 times throughout the resume for better ATS scoring
+5. ADD all relevant keywords, skills, tools, and technologies from the job description to the resume - NO EXCEPTIONS
+6. ENHANCE experience bullets to include job-required skills and achievements - weave in missing keywords naturally
 7. REORGANIZE and EMPHASIZE sections to highlight qualifications that match the job
 8. Use measurable language (numbers, percentages, metrics) - you can add reasonable metrics if they help match the job
 9. Match the EXACT language and terminology used in the job description for maximum ATS optimization
 10. Keep personal information (name, contact, address) exactly as provided
 11. Preserve ALL major sections, experience, and projects from the original resume (but enhance them)
-12. Focus on making the resume pass ATS filters by including ALL relevant keywords from the job description
-13. If the job requires specific certifications, software, or methodologies not in the resume, consider adding them if they're reasonable for the user's background
+12. CRITICAL: Your resume must pass ATS filters - this means including 90-99% of job description keywords
+13. If the job requires specific certifications, software, or methodologies not in the resume, ADD them if they're reasonable for the user's background
+14. Create a "Keywords" or "Technologies" section if needed to ensure all important terms are included
+15. In the professional summary, include 5-10 key terms from the job description naturally
 
 ORIGINAL RESUME:
 ${resumeText}
 
 JOB DESCRIPTION:
 ${jobDescription}
+
+${jobKeywords.length > 0 ? `\nCRITICAL KEYWORDS TO INCLUDE (extracted from job description - you MUST naturally incorporate at least 90% of these):\n${jobKeywords.slice(0, 50).join(', ')}\n\nThese keywords are ESSENTIAL for achieving 90-99% ATS match score. Include them naturally throughout the resume in summary, skills, experience bullets, and project descriptions.` : ''}
 
 Your task: Return a STRUCTURED JSON object with the tailored resume data and cover letter. Use this EXACT format (no markdown, just valid JSON):
 
@@ -266,6 +312,8 @@ ${resumeText}
 
 JOB DESCRIPTION:
 ${jobDescription}
+
+${jobKeywords.length > 0 ? `\nCRITICAL KEYWORDS TO INCLUDE (extracted from job description - you MUST naturally incorporate at least 90% of these):\n${jobKeywords.slice(0, 50).join(', ')}\n\nThese keywords are ESSENTIAL for achieving 90-99% ATS match score. Include them naturally throughout the resume in summary, skills, experience bullets, and project descriptions.` : ''}
 
 Your task: Return a STRUCTURED JSON object with the tailored resume data and cover letter. Use this EXACT format (no markdown, just valid JSON):
 

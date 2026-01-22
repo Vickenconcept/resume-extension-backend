@@ -627,6 +627,7 @@ export class ResumeController {
       // 1. Content from request body (edited content from textareas) - highest priority
       // 2. Saved content from database - fallback
       let resumeText = '';
+      let coverLetterText = '';
       
       logger.info('Download request received', {
         hasContent: !!content,
@@ -640,6 +641,7 @@ export class ResumeController {
       if (content && (content.fullResume || content.fullDocument)) {
         // Use content from request (edited content from textareas)
         resumeText = content.fullResume || content.fullDocument || '';
+        coverLetterText = content.coverLetter || '';
         logger.info('Using edited content from request', {
           contentLength: resumeText.length,
           hasFullResume: !!content.fullResume,
@@ -650,6 +652,7 @@ export class ResumeController {
       } else if (resume.tailoredResumeText) {
         // Use saved content from database
         resumeText = resume.tailoredResumeText;
+        coverLetterText = resume.coverLetter || '';
         logger.info('Using saved content from database', {
           contentLength: resumeText.length,
           format: downloadFormat,
@@ -713,36 +716,67 @@ export class ResumeController {
         }
       }
 
-      // Create a version record for this download
-      try {
-        // Unset other current versions for this resume
-        await prisma.resumeVersion.updateMany({
-          where: { resumeId: resume.id, isCurrent: true },
-          data: { isCurrent: false },
-        });
+      // Always create a new version record for each download (snapshot)
+      // Upload file to Cloudinary and save URLs
+      let uploadedDocxUrl: string | null = null;
+      let uploadedPdfUrl: string | null = null;
+      const downloadUrls: { docx?: string; pdf?: string } = {};
 
-        // Create new version record
+      try {
+        // Upload the generated file to Cloudinary
+        const timestamp = new Date().toISOString().split('T')[0];
+        const filename = `tailored-resume-${timestamp}`;
+        
+        if (downloadFormat === 'docx') {
+          const mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+          const uploadedUrl = await fileUploadService.uploadFileContent(
+            fileContent,
+            'tailored-resumes',
+            `${filename}.docx`,
+            mimeType
+          );
+          uploadedDocxUrl = uploadedUrl;
+          downloadUrls.docx = uploadedUrl;
+          logger.info('DOCX file uploaded to Cloudinary', { url: uploadedDocxUrl });
+        } else {
+          const mimeType = 'application/pdf';
+          const uploadedUrl = await fileUploadService.uploadFileContent(
+            fileContent,
+            'tailored-resumes',
+            `${filename}.pdf`,
+            mimeType
+          );
+          uploadedPdfUrl = uploadedUrl;
+          downloadUrls.pdf = uploadedUrl;
+          logger.info('PDF file uploaded to Cloudinary', { url: uploadedPdfUrl });
+        }
+
+        // Create new version record with uploaded URLs
         const versionName = `Downloaded ${new Date().toLocaleDateString()} - ${downloadFormat.toUpperCase()}`;
-        await prisma.resumeVersion.create({
+        const newVersion = await prisma.resumeVersion.create({
           data: {
             resumeId: resume.id,
             versionName,
             tailoredResumeText: resumeText,
-            coverLetter: resume.coverLetter || null,
-            tailoredDocxUrl: downloadFormat === 'docx' ? null : resume.tailoredDocxUrl, // Will be set if regenerated
-            tailoredPdfUrl: downloadFormat === 'pdf' ? null : resume.tailoredPdfUrl, // Will be set if regenerated
-            isCurrent: true,
+            coverLetter: coverLetterText || null,
+            tailoredDocxUrl: uploadedDocxUrl,
+            tailoredPdfUrl: uploadedPdfUrl,
+            downloadUrls: downloadUrls,
+            isCurrent: false, // Download versions are snapshots, not current editable versions
           },
         });
 
-        logger.info('Version record created for download', {
+        logger.info('New version record created for download', {
           resumeId: resume.resumeId,
+          versionId: newVersion.id,
           format: downloadFormat,
           versionName,
+          hasDocxUrl: !!uploadedDocxUrl,
+          hasPdfUrl: !!uploadedPdfUrl,
         });
       } catch (versionError: any) {
-        logger.warn('Failed to create version record (continuing with download):', versionError);
-        // Don't fail the download if version creation fails
+        logger.warn('Failed to create version record or upload file (continuing with download):', versionError);
+        // Don't fail the download if version creation/upload fails
       }
 
       // Send the generated file

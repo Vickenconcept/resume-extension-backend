@@ -94,6 +94,15 @@ router.post('/update-tailored-content', authenticate, (req, res) =>
 // GET /api/resumes - Get all resumes for user
 router.get('/resumes', authenticate, (req, res) => resumeController.getAllResumes(req, res));
 
+// GET /api/resume-versions - Get all resume versions for user
+router.get('/resume-versions', authenticate, (req, res) => resumeController.getAllResumeVersions(req, res));
+
+// POST /api/promote-version-to-main - Promote a resume version to main resume
+router.post('/promote-version-to-main', authenticate, (req, res) => resumeController.promoteVersionToMain(req, res));
+
+// POST /api/delete-resume-version - Delete a resume version
+router.post('/delete-resume-version', authenticate, (req, res) => resumeController.deleteResumeVersion(req, res));
+
 // POST /api/set-default-resume - Set default resume
 router.post('/set-default-resume', authenticate, (req, res) => resumeController.setDefaultResume(req, res));
 

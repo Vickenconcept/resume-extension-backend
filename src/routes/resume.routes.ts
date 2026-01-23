@@ -30,6 +30,9 @@ router.post('/upload-resume', upload.single('resume'), (req, res) =>
   resumeController.upload(req, res)
 );
 router.post('/tailor-resume', (req, res) => resumeController.tailor(req, res));
+router.post('/regenerate-resume', (req, res) => resumeController.regenerate(req, res));
 router.post('/download-tailored-resume', (req, res) => resumeController.download(req, res));
+router.post('/update-tailored-content', (req, res) => resumeController.updateTailoredContent(req, res));
+router.post('/correct-parsed-content', (req, res) => resumeController.correctParsedContent(req, res));
 
 export default router;

@@ -38,6 +38,7 @@ export interface ParsedResumeContent {
   summary?: string;
   experience?: Array<{
     title?: string;
+    role?: string;
     company?: string;
     location?: string;
     period?: string;
@@ -45,7 +46,28 @@ export interface ParsedResumeContent {
   }>;
   skills?: string[];
   achievements?: string[];
+  education?: Array<{
+    degree?: string;
+    school?: string;
+    location?: string;
+    year?: string;
+  }>;
+  header?: {
+    name?: string;
+    email?: string;
+    phone?: string;
+    location?: string;
+    linkedin?: string;
+    github?: string;
+  };
   raw_text?: string;
+  parsingQuality?: {
+    score: number;
+    confidence: 'high' | 'medium' | 'low';
+    issues: string[];
+    warnings: string[];
+    isValid: boolean;
+  };
 }
 
 export interface TailoredResumeData {

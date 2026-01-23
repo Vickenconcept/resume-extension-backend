@@ -69,6 +69,9 @@ export class ResumeController {
         },
       });
 
+      // Extract parsing quality for response
+      const parsingQuality = (resumeContent as any).parsingQuality;
+
       ApiResponseFormatter.success(
         res,
         {
@@ -76,8 +79,11 @@ export class ResumeController {
           cloudinaryUrl: uploadResult.secure_url,
           filename: file.originalname,
           uploadedAt: resume.createdAt.toISOString(),
+          parsingQuality: parsingQuality || null,
         },
-        'Resume uploaded successfully'
+        parsingQuality && !parsingQuality.isValid
+          ? 'Resume uploaded but parsing quality is low. Please review and correct if needed.'
+          : 'Resume uploaded successfully'
       );
     } catch (error: any) {
       const errorMessage = error?.message || error?.toString() || String(error) || 'Unknown error';
@@ -434,7 +440,7 @@ export class ResumeController {
       }
 
       // Verify that missing keywords were added AND matched keywords were preserved
-      const resumeLower = fullTailoredResume.toLowerCase();
+        const resumeLower = fullTailoredResume.toLowerCase();
       let allMissingAdded = true;
       let allMatchedPreserved = true;
       const addedKeywords: string[] = []; // Track which missing keywords were successfully added
@@ -1295,6 +1301,343 @@ export class ResumeController {
     } catch (error: any) {
       logger.error('Update tailored content error:', error);
       ApiResponseFormatter.error(res, 'Failed to update content: ' + error.message, 500);
+    }
+  }
+
+  /**
+   * Get all resume versions for a user with pagination
+   */
+  async getAllResumeVersions(req: Request, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        ApiResponseFormatter.error(res, 'User not authenticated', 401);
+        return;
+      }
+
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 10;
+      const skip = (page - 1) * limit;
+
+      // Get all versions with their associated resume info
+      const [versions, total] = await Promise.all([
+        prisma.resumeVersion.findMany({
+          where: {
+            resume: {
+              userId: req.user.id,
+            },
+          },
+          include: {
+            resume: {
+              select: {
+                resumeId: true,
+                filename: true,
+                displayName: true,
+                isDefault: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
+          skip,
+          take: limit,
+        }),
+        prisma.resumeVersion.count({
+          where: {
+            resume: {
+              userId: req.user.id,
+            },
+          },
+        }),
+      ]);
+
+      const totalPages = Math.ceil(total / limit);
+
+      ApiResponseFormatter.success(
+        res,
+        {
+          versions: versions.map(version => {
+            const downloadUrls = version.downloadUrls as any || {};
+            return {
+              id: version.id,
+              versionId: version.id,
+              resumeId: version.resume.resumeId,
+              resumeName: version.resume.displayName || version.resume.filename,
+              resumeFilename: version.resume.filename,
+              isResumeDefault: version.resume.isDefault,
+              versionName: version.versionName || `Version ${version.id}`,
+              isCurrent: version.isCurrent,
+              hasDocx: !!version.tailoredDocxUrl || !!downloadUrls.docx,
+              hasPdf: !!version.tailoredPdfUrl || !!downloadUrls.pdf,
+              downloadUrls: {
+                docx: version.tailoredDocxUrl || downloadUrls.docx || null,
+                pdf: version.tailoredPdfUrl || downloadUrls.pdf || null,
+              },
+              createdAt: version.createdAt.toISOString(),
+              updatedAt: version.updatedAt.toISOString(),
+            };
+          }),
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages,
+            hasNext: page < totalPages,
+            hasPrev: page > 1,
+          },
+        },
+        'Resume versions retrieved successfully'
+      );
+    } catch (error: any) {
+      logger.error('Get all resume versions error:', error);
+      ApiResponseFormatter.error(res, 'Failed to get resume versions: ' + error.message, 500);
+    }
+  }
+
+  /**
+   * Promote/Restore a resume version to main resume
+   */
+  async promoteVersionToMain(req: Request, res: Response): Promise<void> {
+    try {
+      const { versionId } = req.body;
+
+      if (!versionId) {
+        ApiResponseFormatter.error(res, 'Version ID is required', 422);
+        return;
+      }
+
+      if (!req.user) {
+        ApiResponseFormatter.error(res, 'User not authenticated', 401);
+        return;
+      }
+
+      const user = req.user;
+
+      // Verify version belongs to user's resume
+      const version = await prisma.resumeVersion.findFirst({
+        where: {
+          id: parseInt(versionId as string),
+          resume: {
+            userId: user.id,
+          },
+        },
+        include: {
+          resume: true,
+        },
+      });
+
+      if (!version) {
+        ApiResponseFormatter.error(res, 'Resume version not found', 404);
+        return;
+      }
+
+      // Unset other current versions for this resume
+      await prisma.resumeVersion.updateMany({
+        where: { 
+          resumeId: version.resumeId, 
+          isCurrent: true,
+          id: { not: version.id },
+        },
+        data: { isCurrent: false },
+      });
+
+      // Set this version as current
+      await prisma.resumeVersion.update({
+        where: { id: version.id },
+        data: { isCurrent: true },
+      });
+
+      // Update the main resume with version's content
+      const downloadUrls = version.downloadUrls as any || {};
+      await prisma.resume.update({
+        where: { id: version.resumeId },
+        data: {
+          tailoredResumeText: version.tailoredResumeText,
+          coverLetter: version.coverLetter || null,
+          tailoredDocxUrl: version.tailoredDocxUrl || downloadUrls.docx || null,
+          tailoredPdfUrl: version.tailoredPdfUrl || downloadUrls.pdf || null,
+          downloadUrls: version.downloadUrls || null,
+        },
+      });
+
+      logger.info('Resume version promoted to main', {
+        versionId: version.id,
+        resumeId: version.resume.resumeId,
+      });
+
+      ApiResponseFormatter.success(
+        res,
+        { 
+          versionId: version.id,
+          resumeId: version.resume.resumeId,
+        },
+        'Resume version promoted to main successfully'
+      );
+    } catch (error: any) {
+      logger.error('Promote version to main error:', error);
+      ApiResponseFormatter.error(res, 'Failed to promote version: ' + error.message, 500);
+    }
+  }
+
+  /**
+   * Delete a resume version
+   */
+  async deleteResumeVersion(req: Request, res: Response): Promise<void> {
+    try {
+      const { versionId } = req.body;
+
+      if (!versionId) {
+        ApiResponseFormatter.error(res, 'Version ID is required', 422);
+        return;
+      }
+
+      if (!req.user) {
+        ApiResponseFormatter.error(res, 'User not authenticated', 401);
+        return;
+      }
+
+      const user = req.user;
+
+      // Verify version belongs to user's resume
+      const version = await prisma.resumeVersion.findFirst({
+        where: {
+          id: parseInt(versionId as string),
+          resume: {
+            userId: user.id,
+          },
+        },
+        include: {
+          resume: true,
+        },
+      });
+
+      if (!version) {
+        ApiResponseFormatter.error(res, 'Resume version not found', 404);
+        return;
+      }
+
+      // Delete files from Cloudinary if they exist
+      try {
+        if (version.tailoredDocxUrl) {
+          const docxMatch = version.tailoredDocxUrl.match(/\/v\d+\/(.+)\.[^.]+$/);
+          if (docxMatch) {
+            await fileUploadService.deleteFile(docxMatch[1], 'raw');
+          }
+        }
+        if (version.tailoredPdfUrl) {
+          const pdfMatch = version.tailoredPdfUrl.match(/\/v\d+\/(.+)\.[^.]+$/);
+          if (pdfMatch) {
+            await fileUploadService.deleteFile(pdfMatch[1], 'raw');
+          }
+        }
+        // Also check downloadUrls
+        const downloadUrls = version.downloadUrls as any;
+        if (downloadUrls) {
+          if (downloadUrls.docx) {
+            const docxMatch = downloadUrls.docx.match(/\/v\d+\/(.+)\.[^.]+$/);
+            if (docxMatch) {
+              await fileUploadService.deleteFile(docxMatch[1], 'raw');
+            }
+          }
+          if (downloadUrls.pdf) {
+            const pdfMatch = downloadUrls.pdf.match(/\/v\d+\/(.+)\.[^.]+$/);
+            if (pdfMatch) {
+              await fileUploadService.deleteFile(pdfMatch[1], 'raw');
+            }
+          }
+        }
+      } catch (cloudinaryError: any) {
+        logger.warn('Failed to delete version files from Cloudinary:', cloudinaryError);
+        // Continue with deletion even if Cloudinary deletion fails
+      }
+
+      // Delete the version from database
+      await prisma.resumeVersion.delete({
+        where: { id: version.id },
+      });
+
+      logger.info('Resume version deleted', {
+        versionId: version.id,
+        resumeId: version.resume.resumeId,
+      });
+
+      ApiResponseFormatter.success(
+        res,
+        { versionId: version.id },
+        'Resume version deleted successfully'
+      );
+    } catch (error: any) {
+      logger.error('Delete resume version error:', error);
+      ApiResponseFormatter.error(res, 'Failed to delete resume version: ' + error.message, 500);
+    }
+  }
+
+  /**
+   * Manually correct parsed resume content if parsing quality is low
+   */
+  async correctParsedContent(req: Request, res: Response): Promise<void> {
+    try {
+      const { resumeId, correctedContent } = req.body;
+
+      if (!resumeId || !correctedContent) {
+        ApiResponseFormatter.error(res, 'Resume ID and corrected content are required', 422);
+        return;
+      }
+
+      if (!req.user) {
+        ApiResponseFormatter.error(res, 'User not authenticated', 401);
+        return;
+      }
+
+      const user = req.user;
+
+      // Verify resume belongs to user
+      const resume = await prisma.resume.findFirst({
+        where: {
+          resumeId,
+          userId: user.id,
+        },
+      });
+
+      if (!resume) {
+        ApiResponseFormatter.error(res, 'Resume not found', 404);
+        return;
+      }
+
+      // Validate corrected content structure
+      if (!correctedContent.raw_text || correctedContent.raw_text.length < 100) {
+        ApiResponseFormatter.error(res, 'Corrected content must include raw_text with at least 100 characters', 422);
+        return;
+      }
+
+      // Re-validate the corrected content
+      const quality = resumeParserService.validateParsingQuality(correctedContent);
+
+      // Update resume with corrected content
+      await prisma.resume.update({
+        where: { id: resume.id },
+        data: {
+          parsedContent: correctedContent as any,
+        },
+      });
+
+      logger.info('Resume parsed content manually corrected', {
+        resumeId,
+        qualityScore: quality.score,
+        qualityConfidence: quality.confidence,
+      });
+
+      ApiResponseFormatter.success(
+        res,
+        {
+          resumeId,
+          parsingQuality: quality,
+        },
+        'Resume content corrected successfully'
+      );
+    } catch (error: any) {
+      logger.error('Correct parsed content error:', error);
+      ApiResponseFormatter.error(res, 'Failed to correct content: ' + error.message, 500);
     }
   }
 }

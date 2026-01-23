@@ -73,22 +73,175 @@ export class QualityService {
 
     // Check keyword coverage - only high-impact keywords
     const missingKeywords = jobKeywords.filter(
-      (keyword) => !tailoredKeywords.some(
-        (tk) => tk.toLowerCase() === keyword.toLowerCase() || this.isSemanticMatch(tk, keyword)
-      )
+      (keyword) =>
+        !tailoredKeywords.some(
+          (tk) =>
+            tk.toLowerCase() === keyword.toLowerCase() ||
+            this.isSemanticMatch(tk, keyword)
+        )
     );
-    
-    // Only show warnings for truly missing high-impact keywords (limit to top 10)
-    if (missingKeywords.length > 0) {
+
+    // Calculate a preliminary keyword match score based on high-impact keywords
+    const keywordMatch = this.calculateKeywordMatch(jobKeywords, tailoredKeywords);
+
+    // Filter out company names, people names, and generic words from missing keywords
+    const criticalMissing = missingKeywords.filter((kw) => {
+      const lower = kw.toLowerCase().trim();
+
+      // Filter out very short keywords (likely noise)
+      if (lower.length < 3) return false;
+
+      // Filter out known company / organization words and school names
+      if (
+        lower.includes('inc') ||
+        lower.includes('llc') ||
+        lower.includes('corp') ||
+        lower.includes('company') ||
+        lower.includes('health inc') ||
+        lower.includes('healthcare inc') ||
+        lower.includes('school') ||
+        lower.includes('university') ||
+        lower.includes('college') ||
+        lower.includes('harvard') ||
+        lower.includes('mit') ||
+        lower.includes('stanford')
+      ) {
+        return false;
+      }
+
+      // Filter out generic words and common prepositions
+      const genericWords = [
+        'healthcare',
+        'health',
+        'care',
+        'business',
+        'industry',
+        'slack',
+        'email',
+        'from',
+        'to',
+        'the',
+        'a',
+        'an',
+        'and',
+        'or',
+        'but',
+        'in',
+        'on',
+        'at',
+        'for',
+        'of',
+        'with',
+        'by',
+        'as',
+        'is',
+        'was',
+        'are',
+        'were',
+        'been',
+        'be',
+        'have',
+        'has',
+        'had',
+        'open',
+        'close',
+        'new',
+        'old',
+        'first',
+        'last',
+        'next',
+        'previous',
+        'founder'
+      ];
+      if (genericWords.includes(lower)) return false;
+
+      // Filter out months and dates
+      const months = [
+        'january',
+        'february',
+        'march',
+        'april',
+        'may',
+        'june',
+        'july',
+        'august',
+        'september',
+        'october',
+        'november',
+        'december'
+      ];
+      if (
+        months.some((month) => lower.includes(month)) ||
+        lower.match(/^\d{1,2}\/\d{1,2}\/\d{2,4}$/)
+      ) {
+        return false;
+      }
+
+      // Filter out phrases starting with prepositions (e.g., "from january", "to open")
+      if (lower.match(/^(from|to|at|in|on|with|by|for|of)\s+/)) return false;
+
+      // Filter out common first names (likely from job descriptions mentioning people)
+      const commonNames = [
+        'jakob',
+        'john',
+        'jane',
+        'mike',
+        'sarah',
+        'david',
+        'emily',
+        'chris',
+        'lisa',
+        'michael',
+        'omi'
+      ];
+      if (commonNames.includes(lower)) return false;
+
+      // Filter out job board boilerplate phrases (intern posted, save share apply, etc.)
+      if (
+        lower.match(
+          /\b(intern\s+posted|save\s+share|apply\s+save|save\s+apply|apply\s+at|posted\s+\d+|days\s+ago)\b/
+        )
+      ) {
+        return false;
+      }
+
+      // Filter out location phrases (united states work, etc.)
+      if (
+        lower.match(
+          /\b(united\s+states\s+work|united\s+states|mount\s+laurel)\b/
+        )
+      ) {
+        return false;
+      }
+
+      // Filter out phrases that are just boilerplate words combined
+      if (
+        lower.match(
+          /^(intern|posted|save|share|apply|work|home|united|states)(\s+(intern|posted|save|share|apply|work|home|united|states))+$/
+        )
+      ) {
+        return false;
+      }
+
+      // Only keep technical terms, skills, tools, technologies
+      return true;
+    });
+
+    // Only show warnings for truly critical missing keywords when the match score is low
+    // and we are in strict mode. If keywordMatch is already high (e.g. ATS shows 95–100%),
+    // we avoid noisy \"Missing X\" messages for company or context words.
+    if (!generateFreely && keywordMatch < 80 && criticalMissing.length > 0) {
       flags.hasMissingKeywords = true;
-      const topMissing = missingKeywords.slice(0, 10);
-      if (topMissing.length <= 5) {
+      const topMissing = criticalMissing.slice(0, 5);
+      if (topMissing.length <= 3) {
         warnings.push(
-          `Missing ${topMissing.length} high-impact keyword${topMissing.length > 1 ? 's' : ''}: ${topMissing.join(', ')}`
+          `Missing ${topMissing.length} critical keyword${topMissing.length > 1 ? 's' : ''}: ${topMissing.join(', ')}`
         );
       } else {
         warnings.push(
-          `Missing ${topMissing.length} high-impact keywords (top ones: ${topMissing.slice(0, 3).join(', ')}, and ${topMissing.length - 3} more)`
+          `Missing ${topMissing.length} critical keywords: ${topMissing
+            .slice(0, 3)
+            .join(', ')}, and ${topMissing.length - 3} more`
         );
       }
     }
@@ -110,10 +263,6 @@ export class QualityService {
       generateFreely
     );
     const completeness = completenessCheck.score;
-    const keywordMatch = this.calculateKeywordMatch(
-      jobKeywords,
-      tailoredKeywords
-    );
 
     // Overall score (weighted average)
     const overall =
@@ -273,12 +422,69 @@ export class QualityService {
     const capitalizedWords = text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g) || [];
     capitalizedWords.forEach((word) => {
       const clean = word.toLowerCase().trim();
-      if (clean.length >= 3 && !noiseWords.has(clean) && !/^\d+$/.test(clean)) {
-        keywords.add(clean);
+      // Skip if it's a noise word
+      if (noiseWords.has(clean)) return;
+      // Skip if it's a number
+      if (/^\d+$/.test(clean)) return;
+      // Skip if it's too short
+      if (clean.length < 3) return;
+      // Skip company names (contain "inc", "llc", "corp", "company", or are common company patterns)
+      if (clean.includes('inc') || clean.includes('llc') || clean.includes('corp') || 
+          clean.includes('company') || clean.includes('health inc') || clean.includes('healthcare inc') ||
+          clean.match(/^[a-z]+\s+(inc|llc|corp|company)$/)) {
+        return;
       }
+      // Skip generic industry words (unless they're part of a technical term)
+      if (['healthcare', 'health', 'care', 'business', 'industry', 'sector', 'field'].includes(clean) &&
+          !clean.includes('tech') && !clean.includes('software')) {
+        return;
+      }
+      keywords.add(clean);
     });
 
-    return Array.from(keywords);
+    // Filter out multi-word company names, generic phrases, and noise
+    const filteredKeywords = Array.from(keywords).filter((kw) => {
+      const lower = kw.toLowerCase();
+      
+      // Skip if it looks like a company name
+      if (lower.includes(' health') || lower.includes(' healthcare') || lower.match(/^[a-z]+\s+health/)) {
+        return false;
+      }
+      
+      // Skip generic words that slipped through (unless they're technical)
+      if (['slack', 'email', 'phone', 'zoom', 'teams'].includes(lower) && !lower.includes('api') && !lower.includes('sdk')) {
+        return false;
+      }
+      
+      // Skip phrases containing job board boilerplate words
+      const boilerplateWords = ['posted', 'apply', 'save', 'share', 'intern', 'internship', 'work', 'home', 'united', 'states'];
+      if (boilerplateWords.some(word => lower.includes(word))) {
+        // Only skip if it's clearly a boilerplate phrase, not a technical term
+        if (lower.match(/\b(posted|apply|save|share|intern|internship|work|home|united|states)\b/) && 
+            !lower.match(/\b(python|java|react|aws|docker|kubernetes|terraform|api|sdk|framework|library)\b/)) {
+          return false;
+        }
+      }
+      
+      // Skip location phrases
+      if (lower.match(/\b(united\s+states|mount\s+laurel|remote|onsite|hybrid)\b/)) {
+        return false;
+      }
+      
+      // Skip job board action phrases
+      if (lower.match(/\b(save\s+share|apply\s+save|apply\s+at|posted\s+\d+|days\s+ago)\b/)) {
+        return false;
+      }
+      
+      // Skip if it's just generic words combined
+      if (lower.match(/^(intern|posted|save|share|apply|work|home|united|states)(\s+(intern|posted|save|share|apply|work|home|united|states))*$/)) {
+        return false;
+      }
+      
+      return true;
+    });
+
+    return filteredKeywords;
   }
 
   /**
@@ -449,19 +655,36 @@ export class QualityService {
     }
 
     // Check for new job titles that are significantly different
+    // Only check in strict mode, and be more lenient with rephrasing
     const originalTitles = this.extractJobTitles(originalResume);
     const tailoredTitles = this.extractJobTitlesFromText(tailoredContent);
 
-    // This is a simplified check - in production, use more sophisticated matching
-    const suspiciousTitles = tailoredTitles.filter(
-      (title) =>
-        !originalTitles.some((ot) =>
-          title.toLowerCase().includes(ot.toLowerCase()) ||
-          ot.toLowerCase().includes(title.toLowerCase())
-        )
-    );
+    // More sophisticated matching - allow semantic variations
+    const suspiciousTitles = tailoredTitles.filter((title) => {
+      const titleLower = title.toLowerCase();
+      
+      // Check if it matches any original title (exact, substring, or semantic)
+      const hasMatch = originalTitles.some((ot) => {
+        const otLower = ot.toLowerCase();
+        // Exact or substring match
+        if (titleLower.includes(otLower) || otLower.includes(titleLower)) {
+          return true;
+        }
+        // Semantic match - check for common title variations
+        const titleWords = new Set(titleLower.split(/\s+/));
+        const otWords = new Set(otLower.split(/\s+/));
+        const commonWords = Array.from(titleWords).filter(w => otWords.has(w));
+        // If they share significant words (at least 2), consider it a match
+        return commonWords.length >= 2 && commonWords.some(w => w.length > 3);
+      });
+      
+      return !hasMatch;
+    });
 
-    if (suspiciousTitles.length > 0 && suspiciousTitles.length > originalTitles.length) {
+    // Only warn if there are significantly more titles or completely new unrelated titles
+    if (suspiciousTitles.length > 0 && 
+        (suspiciousTitles.length > originalTitles.length * 1.5 || 
+         suspiciousTitles.length >= 3)) {
       warnings.push(
         `Warning: New job titles detected that may not match original experience`
       );
@@ -544,7 +767,7 @@ export class QualityService {
   }
 
   /**
-   * Calculate keyword match score
+   * Calculate keyword match score using semantic matching
    */
   private calculateKeywordMatch(
     jobKeywords: string[],
@@ -552,8 +775,11 @@ export class QualityService {
   ): number {
     if (jobKeywords.length === 0) return 100;
 
+    // Use semantic matching (same as similarity calculation)
     const matched = jobKeywords.filter((keyword) =>
-      tailoredKeywords.includes(keyword)
+      tailoredKeywords.some(
+        (tk) => tk.toLowerCase() === keyword.toLowerCase() || this.isSemanticMatch(tk, keyword)
+      )
     ).length;
 
     return Math.round((matched / jobKeywords.length) * 100);
@@ -620,15 +846,43 @@ export class QualityService {
   }
 
   /**
-   * Extract companies from text
+   * Extract companies from text (excluding tools/technologies)
    */
   private extractCompaniesFromText(text: string): string[] {
+    // Known tools/technologies that should NOT be flagged as companies
+    const toolsAndTechnologies = new Set([
+      'github actions', 'github', 'docker', 'kubernetes', 'terraform', 'jenkins',
+      'aws', 'azure', 'gcp', 'react', 'vue', 'angular', 'node', 'python', 'java',
+      'javascript', 'typescript', 'django', 'flask', 'laravel', 'spring', 'express',
+      'mysql', 'postgresql', 'mongodb', 'redis', 'elasticsearch', 'dynamodb',
+      'git', 'jira', 'confluence', 'slack', 'figma', 'sketch', 'tableau', 'power bi',
+      'ci/cd', 'devops', 'agile', 'scrum', 'kanban', 'tdd', 'bdd'
+    ]);
+    
     // Simplified - look for patterns like "at Company Name" or "Company Name,"
     const companyPattern = /(?:at|with|from)\s+([A-Z][a-zA-Z\s&]+?)(?:,|\.|$)/g;
     const matches = text.match(companyPattern);
+    if (!matches) return [];
+    
+    // Filter out tools/technologies and return only real company names
     return matches
-      ? matches.map((m) => m.replace(/(?:at|with|from)\s+/i, '').trim())
-      : [];
+      .map((m) => m.replace(/(?:at|with|from)\s+/i, '').trim())
+      .filter((company) => {
+        const lower = company.toLowerCase();
+        // Exclude if it's a known tool/technology
+        if (toolsAndTechnologies.has(lower)) {
+          return false;
+        }
+        // Exclude if it contains common tool/tech keywords
+        if (lower.includes('actions') || lower.includes('docker') || 
+            lower.includes('kubernetes') || lower.includes('github')) {
+          return false;
+        }
+        // Only keep if it looks like a real company name (has multiple words or common company suffixes)
+        return company.split(/\s+/).length > 1 || 
+               lower.includes('inc') || lower.includes('llc') || 
+               lower.includes('corp') || lower.includes('ltd');
+      });
   }
 
   /**

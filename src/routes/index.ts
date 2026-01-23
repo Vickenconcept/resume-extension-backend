@@ -78,6 +78,9 @@ router.post('/upload-resume', authenticate, (req, res, next) => {
 // POST /api/tailor-resume - Tailor resume
 router.post('/tailor-resume', authenticate, (req, res) => resumeController.tailor(req, res));
 
+// POST /api/regenerate-resume - Regenerate resume to add missing keywords
+router.post('/regenerate-resume', authenticate, (req, res) => resumeController.regenerate(req, res));
+
 // POST /api/download-tailored-resume - Download tailored resume
 router.post('/download-tailored-resume', authenticate, (req, res) =>
   resumeController.download(req, res)

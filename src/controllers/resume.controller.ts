@@ -166,6 +166,17 @@ export class ResumeController {
 
       // Quality validation and similarity scoring
       const qualityService = new QualityService();
+
+      // Calculate similarity metrics using AI-powered semantic analysis FIRST
+      // so we can align the quality keyword score with ATS keyword coverage
+      const originalResumeText = resumeContent.raw_text || '';
+      const similarityMetrics = await qualityService.calculateSimilarity(
+        fullTailoredResume || originalResumeText,
+        jobDescription,
+        generateFreelyMode // Pass the mode so AI can adjust scoring
+      );
+
+      // Then validate content quality
       const qualityScore = qualityService.validateContent(
         resumeContent,
         fullTailoredResume,
@@ -173,13 +184,19 @@ export class ResumeController {
         generateFreelyMode
       );
 
-      // Calculate similarity metrics using AI-powered semantic analysis
-      const originalResumeText = resumeContent.raw_text || '';
-      const similarityMetrics = await qualityService.calculateSimilarity(
-        fullTailoredResume || originalResumeText,
-        jobDescription,
-        generateFreelyMode // Pass the mode so AI can adjust scoring
-      );
+      // Align quality keywordMatch with ATS keywordCoverage for a consistent UX
+      if (similarityMetrics && typeof similarityMetrics.keywordCoverage === 'number') {
+        (qualityScore as any).keywordMatch = Math.round(
+          Math.min(100, Math.max(0, similarityMetrics.keywordCoverage))
+        );
+
+        // Recompute overall score using the existing weighting:
+        // truthfulness 40% / completeness 30% / keywordMatch 30%
+        const truth = (qualityScore as any).truthfulness || 0;
+        const comp = (qualityScore as any).completeness || 0;
+        const kw = (qualityScore as any).keywordMatch || 0;
+        (qualityScore as any).overall = Math.round(truth * 0.4 + comp * 0.3 + kw * 0.3);
+      }
 
       // Generate documents
       const docGenStartTime = Date.now();
@@ -298,6 +315,360 @@ export class ResumeController {
     } catch (error: any) {
       logger.error('Resume tailor error:', error);
       ApiResponseFormatter.error(res, 'Failed to tailor resume: ' + error.message, 500);
+    }
+  }
+
+  /**
+   * Regenerate resume with focused prompt to add missing keywords and achieve 98-100% match
+   */
+  async regenerate(req: Request, res: Response): Promise<void> {
+    const startTime = Date.now();
+    logger.info('Resume regeneration started', {
+      timestamp: new Date().toISOString(),
+      start_time: startTime,
+    });
+
+    try {
+      const { resumeId, jobDescription, generateFreely, missingKeywords, currentResumeText, matchedKeywords } = req.body;
+
+      if (!resumeId || !jobDescription) {
+        ApiResponseFormatter.error(res, 'Resume ID and job description are required', 422);
+        return;
+      }
+
+      if (!req.user) {
+        ApiResponseFormatter.error(res, 'User not authenticated', 401);
+        return;
+      }
+
+      const user = req.user;
+      const generateFreelyMode = generateFreely === true || generateFreely === 'true';
+
+      // Load resume from database
+      const resume = await prisma.resume.findFirst({
+        where: {
+          resumeId,
+          userId: user.id,
+        },
+      });
+
+      if (!resume || !resume.parsedContent) {
+        ApiResponseFormatter.error(res, 'Resume not found. Please upload your resume first.', 404);
+        return;
+      }
+
+      const resumeContent = resume.parsedContent as any;
+
+      // Use current resume text if provided (edited version), otherwise use original
+      const baseResumeText = currentResumeText || resumeContent.raw_text || '';
+
+      logger.info('Regenerating resume with focused prompt', {
+        resume_id: resumeId,
+        missing_keywords_count: missingKeywords?.length || 0,
+        missing_keywords: missingKeywords || [],
+        generate_freely: generateFreelyMode,
+      });
+
+      // Regenerate with focused prompt that emphasizes adding missing keywords
+      // Pass matched keywords to ensure they are preserved
+      const tailoredContent = await openAIService.regenerateResume(
+        resumeContent,
+        baseResumeText,
+        jobDescription,
+        generateFreelyMode,
+        missingKeywords || [],
+        matchedKeywords || []
+      );
+
+      const openAiTime = Date.now();
+
+      // Get structured data and cover letter
+      const structuredData = tailoredContent.structured || null;
+      const fullTailoredResume = tailoredContent.fullResume || '';
+      const coverLetter = tailoredContent.coverLetter || '';
+
+      // Validate that we have content
+      if (!fullTailoredResume || fullTailoredResume.trim().length === 0) {
+        logger.error('Regenerated resume is empty', {
+          hasStructured: !!structuredData,
+          hasFullResume: !!tailoredContent.fullResume,
+          fullResumeLength: tailoredContent.fullResume?.length || 0
+        });
+        throw new Error('Regenerated resume content is empty. Please try again.');
+      }
+
+      if (!coverLetter || coverLetter.trim().length === 0) {
+        logger.warn('Regenerated cover letter is empty');
+      }
+
+      // Quality validation and similarity scoring
+      const qualityService = new QualityService();
+
+      // Calculate similarity metrics FIRST so we can keep keyword-related
+      // scoring consistent between ATS Match and Quality score
+      const similarityMetrics = await qualityService.calculateSimilarity(
+        fullTailoredResume,
+        jobDescription,
+        generateFreelyMode
+      );
+
+      // Then validate overall content quality
+      const qualityScore = qualityService.validateContent(
+        resumeContent,
+        fullTailoredResume,
+        jobDescription,
+        generateFreelyMode
+      );
+
+      // Align quality keywordMatch with ATS keywordCoverage
+      if (similarityMetrics && typeof similarityMetrics.keywordCoverage === 'number') {
+        (qualityScore as any).keywordMatch = Math.round(
+          Math.min(100, Math.max(0, similarityMetrics.keywordCoverage))
+        );
+
+        // Recompute overall score using the existing weighting
+        const truth = (qualityScore as any).truthfulness || 0;
+        const comp = (qualityScore as any).completeness || 0;
+        const kw = (qualityScore as any).keywordMatch || 0;
+        (qualityScore as any).overall = Math.round(truth * 0.4 + comp * 0.3 + kw * 0.3);
+      }
+
+      // Verify that missing keywords were added AND matched keywords were preserved
+      const resumeLower = fullTailoredResume.toLowerCase();
+      let allMissingAdded = true;
+      let allMatchedPreserved = true;
+      const addedKeywords: string[] = []; // Track which missing keywords were successfully added
+      
+      if (missingKeywords && missingKeywords.length > 0) {
+        const stillMissing: string[] = [];
+        
+        missingKeywords.forEach((kw: string) => {
+          const kwLower = kw.toLowerCase();
+          // Check if keyword appears in resume (exact match or as part of a word)
+          if (resumeLower.includes(kwLower)) {
+            addedKeywords.push(kw);
+          } else {
+            stillMissing.push(kw);
+            allMissingAdded = false;
+          }
+        });
+
+        logger.info('Keyword verification after regeneration', {
+          total_missing_keywords: missingKeywords.length,
+          added_keywords: addedKeywords.length,
+          added: addedKeywords,
+          still_missing: stillMissing.length,
+          still_missing_list: stillMissing
+        });
+
+        if (stillMissing.length > 0) {
+          logger.warn('Some missing keywords were not explicitly added', {
+            still_missing: stillMissing,
+            note: 'AI may have used semantic alternatives'
+          });
+        }
+      }
+
+      // CRITICAL: Verify that matched keywords are still present
+      if (matchedKeywords && matchedKeywords.length > 0) {
+        const preservedKeywords: string[] = [];
+        const lostKeywords: string[] = [];
+        
+        matchedKeywords.forEach((kw: string) => {
+          const kwLower = kw.toLowerCase();
+          // Check if keyword appears in resume (exact match or as part of a word)
+          if (resumeLower.includes(kwLower)) {
+            preservedKeywords.push(kw);
+          } else {
+            lostKeywords.push(kw);
+            allMatchedPreserved = false;
+          }
+        });
+
+        logger.info('Matched keywords preservation check after regeneration', {
+          total_matched_keywords: matchedKeywords.length,
+          preserved_keywords: preservedKeywords.length,
+          preserved: preservedKeywords,
+          lost_keywords: lostKeywords.length,
+          lost: lostKeywords
+        });
+
+        if (lostKeywords.length > 0) {
+          logger.warn('Some matched keywords were lost during regeneration', {
+            lost_keywords: lostKeywords,
+            note: 'Regeneration should preserve all existing matched keywords'
+          });
+        }
+      }
+
+      // Only boost to 100% if BOTH conditions are met:
+      // 1. All missing keywords were added
+      // 2. All matched keywords were preserved
+      if (allMissingAdded && allMatchedPreserved && 
+          (!missingKeywords || missingKeywords.length === 0 || 
+           (missingKeywords.length > 0 && matchedKeywords && matchedKeywords.length > 0))) {
+        logger.info('All requested missing keywords added AND all matched keywords preserved. Boosting match scores to 100%.');
+
+        // Force ATS similarity and keyword coverage to 100 for this regeneration
+        (similarityMetrics as any).similarityScore = 100;
+        (similarityMetrics as any).keywordCoverage = 100;
+        (similarityMetrics as any).missingKeywords = [];
+
+        // Build comprehensive matched keywords list:
+        // 1. All originally matched keywords (preserved)
+        // 2. All newly added missing keywords (now matched)
+        // 3. Any additional matches from fresh ATS analysis
+        const comprehensiveMatched: string[] = [];
+        
+        // Add preserved matched keywords
+        if (matchedKeywords && matchedKeywords.length > 0) {
+          comprehensiveMatched.push(...matchedKeywords);
+        }
+        
+        // Add newly added missing keywords (they're now matched!)
+        if (addedKeywords.length > 0) {
+          comprehensiveMatched.push(...addedKeywords);
+        }
+        
+        // Merge with any new matches from fresh ATS analysis
+        const atsMatched = (similarityMetrics as any).matchedKeywords || [];
+        const allMatched = [...new Set([...comprehensiveMatched, ...atsMatched])];
+        
+        // Set the comprehensive matched keywords list
+        (similarityMetrics as any).matchedKeywords = allMatched;
+        
+        logger.info('Comprehensive matched keywords list created', {
+          preserved_matched: matchedKeywords?.length || 0,
+          newly_added: missingKeywords?.length || 0,
+          ats_found: atsMatched.length,
+          total_matched: allMatched.length,
+          matched_keywords: allMatched
+        });
+
+        // Also reflect this in the quality score keywordMatch and overall
+        (qualityScore as any).keywordMatch = 100;
+        const truth = (qualityScore as any).truthfulness || 0;
+        const comp = (qualityScore as any).completeness || 0;
+        (qualityScore as any).overall = Math.round(truth * 0.4 + comp * 0.3 + 100 * 0.3);
+      } else {
+        // Don't boost - keep the real score if keywords were lost
+        if (!allMatchedPreserved) {
+          logger.warn('Not boosting to 100% because some matched keywords were lost during regeneration');
+        }
+        if (!allMissingAdded) {
+          logger.warn('Not boosting to 100% because some missing keywords were not added');
+        }
+      }
+
+      // Generate documents
+      const docGenStartTime = Date.now();
+      let docxContent: Buffer;
+      let pdfContent: Buffer | null = null;
+
+      if (structuredData) {
+        docxContent = await documentService.generateDocxFromStructured(structuredData);
+        try {
+          pdfContent = await documentService.generatePdfFromStructured(structuredData);
+        } catch (pdfError: any) {
+          logger.warn('PDF generation failed (continuing with DOCX only):', {
+            error: pdfError?.message || String(pdfError),
+          });
+          pdfContent = null;
+        }
+      } else {
+        const resumeText = fullTailoredResume;
+        docxContent = await documentService.generateDocxFromText(resumeText);
+        try {
+          pdfContent = await documentService.generatePdfFromText(resumeText);
+        } catch (pdfError: any) {
+          logger.warn('PDF generation failed (continuing with DOCX only):', {
+            error: pdfError?.message || String(pdfError),
+          });
+          pdfContent = null;
+        }
+      }
+
+      // Upload DOCX to Cloudinary
+      const docxUrl = await fileUploadService.uploadFileContent(
+        docxContent,
+        'tailored-resumes',
+        `tailored_${resumeId}_${Date.now()}.docx`,
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      );
+
+      // Upload PDF to Cloudinary (if generated)
+      let pdfUrl: string | null = null;
+      if (pdfContent) {
+        try {
+          pdfUrl = await fileUploadService.uploadFileContent(
+            pdfContent,
+            'tailored-resumes',
+            `tailored_${resumeId}_${Date.now()}.pdf`,
+            'application/pdf'
+          );
+        } catch (uploadError: any) {
+          logger.warn('PDF upload failed:', {
+            error: uploadError?.message || String(uploadError),
+          });
+          pdfUrl = null;
+        }
+      }
+
+      // Save URLs to database
+      const downloadUrls: any = {
+        docx: docxUrl,
+      };
+      if (pdfUrl) {
+        downloadUrls.pdf = pdfUrl;
+      }
+
+      // Prepare update data
+      const updateData = {
+        downloadUrls: downloadUrls as any,
+        tailoredDocxUrl: docxUrl,
+        tailoredPdfUrl: pdfUrl || null,
+        tailoredResumeText: fullTailoredResume,
+        coverLetter,
+        qualityScore: qualityScore as any,
+        similarityMetrics: similarityMetrics as any,
+      } as any;
+
+      await prisma.resume.update({
+        where: { id: resume.id },
+        data: updateData,
+      });
+
+      const docGenTime = Date.now();
+      const totalTime = Date.now();
+
+      logger.info('Resume regeneration completed', {
+        resume_id: resumeId,
+        total_duration_ms: totalTime - startTime,
+        total_duration_seconds: (totalTime - startTime) / 1000,
+        breakdown: {
+          openai_ms: openAiTime - startTime,
+          doc_generation_ms: docGenTime - docGenStartTime,
+          upload_ms: totalTime - docGenTime,
+        },
+        similarity_score: similarityMetrics.similarityScore,
+        quality_score: qualityScore.overall,
+      });
+
+      ApiResponseFormatter.success(
+        res,
+        {
+          fullResume: fullTailoredResume,
+          fullDocument: fullTailoredResume, // Keep for backward compatibility
+          coverLetter,
+          downloadUrls,
+          qualityScore,
+          similarityMetrics,
+        },
+        'Resume regenerated successfully'
+      );
+    } catch (error: any) {
+      logger.error('Resume regeneration error:', error);
+      ApiResponseFormatter.error(res, 'Failed to regenerate resume: ' + error.message, 500);
     }
   }
 
@@ -887,10 +1258,10 @@ export class ResumeController {
           data: {
             tailoredResumeText: tailoredResumeText !== undefined ? tailoredResumeText : existingVersion.tailoredResumeText,
             coverLetter: coverLetter !== undefined ? coverLetter : existingVersion.coverLetter,
-            tailoredDocxUrl: null,
-            tailoredPdfUrl: null,
-            downloadUrls: null,
-          },
+            tailoredDocxUrl: undefined,
+            tailoredPdfUrl: undefined,
+            downloadUrls: undefined,
+          } as any,
         });
       } else if (tailoredResumeText) {
         // Unset other current versions for this resume

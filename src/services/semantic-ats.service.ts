@@ -84,7 +84,7 @@ export class SemanticATSService {
     } catch (error: any) {
       logger.error('Semantic ATS Analysis Error:', error);
       // Fallback to basic analysis if AI fails
-      return this.fallbackAnalysis(resumeContent, jobDescription);
+      return this.fallbackAnalysis(resumeContent, jobDescription, generateFreely);
     }
   }
 
@@ -188,7 +188,11 @@ IMPORTANT:
   /**
    * Fallback analysis if AI fails (simplified but still better than keyword counting)
    */
-  private fallbackAnalysis(resumeContent: string, jobDescription: string): SemanticATSResult {
+  private fallbackAnalysis(
+    resumeContent: string,
+    jobDescription: string,
+    generateFreely: boolean = false
+  ): SemanticATSResult {
     // Extract high-impact keywords (skills, tools, technologies)
     const highImpactKeywords = this.extractHighImpactKeywords(jobDescription);
     const resumeKeywords = this.extractHighImpactKeywords(resumeContent);

@@ -52,14 +52,16 @@ export class SemanticATSService {
         messages: [
           {
             role: 'system',
-            content: 'You are an expert ATS (Applicant Tracking System) analyst. You understand how modern ATS systems work in 2026 - they use semantic matching, understand synonyms, and focus on high-impact keywords (skills, tools, technologies) rather than counting every word. You provide intelligent, realistic ATS match scores.',
+            content: 'You are an expert ATS (Applicant Tracking System) analyst. You understand how modern ATS systems work in 2026 - they use semantic matching, understand synonyms, and focus on high-impact keywords (skills, tools, technologies) rather than counting every word. You provide intelligent, realistic ATS match scores. Your analysis MUST be deterministic and consistent for the same input.',
           },
           {
             role: 'user',
             content: prompt,
           },
         ],
-        temperature: 0.3, // Lower temperature for more consistent analysis
+        // Use temperature 0 for maximum determinism so the same resume + job
+        // description always produce the same keyword sets.
+        temperature: 0,
         max_tokens: 1500,
         response_format: { type: 'json_object' },
       });
@@ -162,10 +164,27 @@ IMPORTANT:
    * Normalize and validate AI response
    */
   private normalizeATSResult(analysis: any): SemanticATSResult {
+    // Helper to normalize keyword arrays: dedupe and sort for stable ordering
+    const normalizeKeywordArray = (arr: any): string[] => {
+      if (!Array.isArray(arr)) return [];
+      const set = new Set<string>();
+      arr.forEach((kw) => {
+        if (typeof kw === 'string' && kw.trim().length > 0) {
+          set.add(kw.trim());
+        }
+      });
+      return Array.from(set).sort((a, b) => a.localeCompare(b));
+    };
+
+    const matchedKeywords = normalizeKeywordArray(analysis.matchedKeywords);
+    const missingKeywords = normalizeKeywordArray(analysis.missingKeywords);
+    const hiMatched = normalizeKeywordArray(analysis.highImpactKeywords?.matched);
+    const hiMissing = normalizeKeywordArray(analysis.highImpactKeywords?.missing);
+
     return {
       similarityScore: Math.min(100, Math.max(0, analysis.similarityScore || 0)),
-      matchedKeywords: Array.isArray(analysis.matchedKeywords) ? analysis.matchedKeywords : [],
-      missingKeywords: Array.isArray(analysis.missingKeywords) ? analysis.missingKeywords : [],
+      matchedKeywords,
+      missingKeywords,
       keywordCoverage: Math.min(100, Math.max(0, analysis.keywordCoverage || 0)),
       semanticMatches: {
         skills: Math.min(100, Math.max(0, analysis.semanticMatches?.skills || 0)),
@@ -175,12 +194,8 @@ IMPORTANT:
       },
       recommendations: Array.isArray(analysis.recommendations) ? analysis.recommendations : [],
       highImpactKeywords: {
-        matched: Array.isArray(analysis.highImpactKeywords?.matched)
-          ? analysis.highImpactKeywords.matched
-          : [],
-        missing: Array.isArray(analysis.highImpactKeywords?.missing)
-          ? analysis.highImpactKeywords.missing
-          : [],
+        matched: hiMatched,
+        missing: hiMissing,
       },
     };
   }

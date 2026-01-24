@@ -42,15 +42,31 @@ export class FileUploadService {
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       ].includes(mimeType);
 
-      // Sanitize filename
+      // Extract extension from original filename
       const originalName = file.originalname;
-      const baseName = originalName.replace(/\.[^/.]+$/, '');
-      const sanitizedBaseName = baseName
-        .replace(/[^a-zA-Z0-9._-]/g, '_')
-        .replace(/_+/g, '_')
-        .replace(/^_|_$/g, '');
-
-      const publicId = sanitizedBaseName || `file_${Date.now()}`;
+      const extensionMatch = originalName.match(/\.([^.]+)$/);
+      const extension = extensionMatch ? extensionMatch[1] : '';
+      
+      // Determine final public_id
+      let finalPublicId: string;
+      
+      if (options.public_id) {
+        // If public_id is provided in options, use it but ensure it has extension
+        finalPublicId = extension && !options.public_id.endsWith(`.${extension}`)
+          ? `${options.public_id}.${extension}`
+          : options.public_id;
+      } else {
+        // Generate from original filename
+        const baseName = extension ? originalName.replace(/\.[^/.]+$/, '') : originalName;
+        const sanitizedBaseName = baseName
+          .replace(/[^a-zA-Z0-9._-]/g, '_')
+          .replace(/_+/g, '_')
+          .replace(/^_|_$/g, '');
+        
+        finalPublicId = extension
+          ? `${sanitizedBaseName || `file_${Date.now()}`}.${extension}`
+          : (sanitizedBaseName || `file_${Date.now()}`);
+      }
 
       // Determine resource type
       let resourceType: 'image' | 'video' | 'raw' | 'auto' = 'auto';
@@ -66,9 +82,11 @@ export class FileUploadService {
         folder,
         resource_type: resourceType,
         use_filename: true,
-        unique_filename: false,
-        public_id: publicId,
-        ...options,
+        unique_filename: true, // Changed to true to ensure unique filenames
+        public_id: finalPublicId,
+        ...Object.fromEntries(
+          Object.entries(options).filter(([key]) => key !== 'public_id')
+        ), // Remove public_id from options since we set it above
       };
 
       // Upload to Cloudinary
@@ -110,19 +128,35 @@ export class FileUploadService {
       ].includes(mimeType);
       const resourceType = isPdf || isWord ? 'raw' : 'auto';
 
-      const baseName = filename.replace(/\.[^/.]+$/, '');
+      // Extract extension from filename or determine from mimeType
+      const extensionMatch = filename.match(/\.([^.]+)$/);
+      let extension = extensionMatch ? extensionMatch[1] : '';
+      
+      // If no extension in filename, determine from mimeType
+      if (!extension) {
+        if (isPdf) extension = 'pdf';
+        else if (isWord) extension = 'docx';
+      }
+
+      // Separate base name and extension
+      const baseName = extension ? filename.replace(/\.[^/.]+$/, '') : filename;
+      
+      // Sanitize base name (keep dots, dashes, underscores)
       const sanitizedBaseName = baseName
         .replace(/[^a-zA-Z0-9._-]/g, '_')
         .replace(/_+/g, '_')
         .replace(/^_|_$/g, '');
 
-      const publicId = sanitizedBaseName || `file_${Date.now()}`;
+      // Reconstruct public_id with extension
+      const publicId = extension 
+        ? `${sanitizedBaseName || `file_${Date.now()}`}.${extension}`
+        : (sanitizedBaseName || `file_${Date.now()}`);
 
       const uploadOptions = {
         folder,
         resource_type: resourceType,
         use_filename: true,
-        unique_filename: false,
+        unique_filename: true, // Changed to true to ensure unique filenames
         public_id: publicId,
         ...options,
       };
@@ -132,6 +166,13 @@ export class FileUploadService {
         `data:${mimeType};base64,${buffer.toString('base64')}`,
         uploadOptions
       );
+
+      logger.info('File uploaded to Cloudinary', {
+        folder,
+        publicId,
+        url: uploadResult.secure_url,
+        resourceType,
+      });
 
       return uploadResult.secure_url;
     } catch (error: any) {

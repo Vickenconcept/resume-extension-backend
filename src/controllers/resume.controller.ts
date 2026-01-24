@@ -15,6 +15,22 @@ const fileUploadService = new FileUploadService();
 const documentService = new DocumentService();
 
 export class ResumeController {
+  /**
+   * Get user's default template preference
+   */
+  private async getUserTemplate(userId: number): Promise<'classic' | 'modern' | 'compact'> {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { defaultTemplate: true },
+      });
+      return (user?.defaultTemplate as 'classic' | 'modern' | 'compact') || 'classic';
+    } catch (error) {
+      logger.warn('Failed to get user template, defaulting to classic:', error);
+      return 'classic';
+    }
+  }
+
   async upload(req: Request, res: Response): Promise<void> {
     try {
       if (!req.file) {
@@ -39,9 +55,9 @@ export class ResumeController {
       
       const isDefault = existingResumesCount === 0; // First resume is default
 
-      // Upload to Cloudinary
+      // Upload to Cloudinary - use resumeId directly (it already has "resume_" prefix)
       const uploadResult = await fileUploadService.uploadFile(file, 'resumes', {
-        public_id: `resume_${resumeId}`,
+        public_id: resumeId, // Don't add "resume_" again, it's already in resumeId
       });
 
       // Parse resume content
@@ -208,6 +224,9 @@ export class ResumeController {
       const docGenStartTime = Date.now();
       logger.info('Generating tailored resume documents...');
 
+      // Get user's template preference
+      const template = await this.getUserTemplate(user.id);
+
       let docxContent: Buffer;
       let pdfContent: Buffer | null = null;
       let pdfUrl: string | null = null;
@@ -219,11 +238,11 @@ export class ResumeController {
       if (resumeText && resumeText.trim().length > 0) {
         // Use text-based generation (preserves ALL content including PROJECT HIGHLIGHTS, LANGUAGE, etc.)
         logger.info('Using text-based generation from fullTailoredResume');
-        docxContent = await documentService.generateDocxFromText(resumeText);
+        docxContent = await documentService.generateDocxFromText(resumeText, template);
         
         // Try to generate PDF (optional - may fail if Chromium not available)
         try {
-          pdfContent = await documentService.generatePdfFromText(resumeText);
+          pdfContent = await documentService.generatePdfFromText(resumeText, template);
         } catch (pdfError: any) {
           logger.warn('PDF generation failed (continuing with DOCX only):', {
             error: pdfError?.message || String(pdfError),
@@ -233,10 +252,10 @@ export class ResumeController {
       } else if (structuredData) {
         // Fallback to structured data if no text available
         logger.warn('Using structured data generation - full text not available');
-        docxContent = await documentService.generateDocxFromStructured(structuredData);
+        docxContent = await documentService.generateDocxFromStructured(structuredData, template);
         
         try {
-          pdfContent = await documentService.generatePdfFromStructured(structuredData);
+          pdfContent = await documentService.generatePdfFromStructured(structuredData, template);
         } catch (pdfError: any) {
           logger.warn('PDF generation failed (continuing with DOCX only):', {
             error: pdfError?.message || String(pdfError),
@@ -248,10 +267,11 @@ export class ResumeController {
       }
 
       // Upload DOCX to Cloudinary
+      const timestamp = Date.now();
       const docxUrl = await fileUploadService.uploadFileContent(
         docxContent,
         'tailored-resumes',
-        `tailored_${resumeId}_${Date.now()}.docx`,
+        `tailored_${resumeId}_${timestamp}.docx`,
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       );
 
@@ -261,7 +281,7 @@ export class ResumeController {
           pdfUrl = await fileUploadService.uploadFileContent(
             pdfContent,
             'tailored-resumes',
-            `tailored_${resumeId}_${Date.now()}.pdf`,
+            `tailored_${resumeId}_${timestamp}.pdf`,
             'application/pdf'
           );
         } catch (uploadError: any) {
@@ -568,13 +588,16 @@ export class ResumeController {
 
       // Generate documents
       const docGenStartTime = Date.now();
+      // Get user's template preference
+      const template = await this.getUserTemplate(user.id);
+      
       let docxContent: Buffer;
       let pdfContent: Buffer | null = null;
 
       if (structuredData) {
-        docxContent = await documentService.generateDocxFromStructured(structuredData);
+        docxContent = await documentService.generateDocxFromStructured(structuredData, template);
         try {
-          pdfContent = await documentService.generatePdfFromStructured(structuredData);
+          pdfContent = await documentService.generatePdfFromStructured(structuredData, template);
         } catch (pdfError: any) {
           logger.warn('PDF generation failed (continuing with DOCX only):', {
             error: pdfError?.message || String(pdfError),
@@ -583,9 +606,9 @@ export class ResumeController {
         }
       } else {
         const resumeText = fullTailoredResume;
-        docxContent = await documentService.generateDocxFromText(resumeText);
+        docxContent = await documentService.generateDocxFromText(resumeText, template);
         try {
-          pdfContent = await documentService.generatePdfFromText(resumeText);
+          pdfContent = await documentService.generatePdfFromText(resumeText, template);
         } catch (pdfError: any) {
           logger.warn('PDF generation failed (continuing with DOCX only):', {
             error: pdfError?.message || String(pdfError),
@@ -595,10 +618,11 @@ export class ResumeController {
       }
 
       // Upload DOCX to Cloudinary
+      const timestamp = Date.now();
       const docxUrl = await fileUploadService.uploadFileContent(
         docxContent,
         'tailored-resumes',
-        `tailored_${resumeId}_${Date.now()}.docx`,
+        `tailored_${resumeId}_${timestamp}.docx`,
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       );
 
@@ -609,7 +633,7 @@ export class ResumeController {
           pdfUrl = await fileUploadService.uploadFileContent(
             pdfContent,
             'tailored-resumes',
-            `tailored_${resumeId}_${Date.now()}.pdf`,
+            `tailored_${resumeId}_${timestamp}.pdf`,
             'application/pdf'
           );
         } catch (uploadError: any) {
@@ -1099,15 +1123,18 @@ export class ResumeController {
       }
       
       // Generate documents with the determined content
+      // Get user's template preference
+      const template = await this.getUserTemplate(user.id);
+      
       let fileContent: Buffer;
       if (downloadFormat === 'docx') {
-        fileContent = await documentService.generateDocxFromText(resumeText);
+        fileContent = await documentService.generateDocxFromText(resumeText, template);
       } else {
         try {
-          fileContent = await documentService.generatePdfFromText(resumeText);
+          fileContent = await documentService.generatePdfFromText(resumeText, template);
         } catch (pdfError: any) {
           logger.warn('PDF generation failed, falling back to DOCX:', pdfError);
-          fileContent = await documentService.generateDocxFromText(resumeText);
+          fileContent = await documentService.generateDocxFromText(resumeText, template);
           // Change format to docx if PDF fails
           const filename = `tailored-resume-${new Date().toISOString().split('T')[0]}.docx`;
           const contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -1127,8 +1154,9 @@ export class ResumeController {
 
       try {
         // Upload the generated file to Cloudinary
-        const timestamp = new Date().toISOString().split('T')[0];
-        const filename = `tailored-resume-${timestamp}`;
+        const timestamp = Date.now();
+        const dateStr = new Date().toISOString().split('T')[0];
+        const filename = `tailored-resume-${dateStr}-${timestamp}`;
         
         if (downloadFormat === 'docx') {
           const mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -1140,7 +1168,7 @@ export class ResumeController {
           );
           uploadedDocxUrl = uploadedUrl;
           downloadUrls.docx = uploadedUrl;
-          logger.info('DOCX file uploaded to Cloudinary', { url: uploadedDocxUrl });
+          logger.info('DOCX file uploaded to Cloudinary', { url: uploadedDocxUrl, filename: `${filename}.docx` });
         } else {
           const mimeType = 'application/pdf';
           const uploadedUrl = await fileUploadService.uploadFileContent(
@@ -1151,7 +1179,7 @@ export class ResumeController {
           );
           uploadedPdfUrl = uploadedUrl;
           downloadUrls.pdf = uploadedUrl;
-          logger.info('PDF file uploaded to Cloudinary', { url: uploadedPdfUrl });
+          logger.info('PDF file uploaded to Cloudinary', { url: uploadedPdfUrl, filename: `${filename}.pdf` });
         }
 
         // Create new version record with uploaded URLs
@@ -1569,6 +1597,72 @@ export class ResumeController {
     } catch (error: any) {
       logger.error('Delete resume version error:', error);
       ApiResponseFormatter.error(res, 'Failed to delete resume version: ' + error.message, 500);
+    }
+  }
+
+  /**
+   * Get user's default template preference
+   */
+  async getDefaultTemplate(req: Request, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        ApiResponseFormatter.error(res, 'User not authenticated', 401);
+        return;
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { defaultTemplate: true },
+      });
+
+      const template = (user?.defaultTemplate as 'classic' | 'modern' | 'compact') || 'classic';
+
+      ApiResponseFormatter.success(
+        res,
+        { template },
+        'Default template retrieved successfully'
+      );
+    } catch (error: any) {
+      logger.error('Get default template error:', error);
+      ApiResponseFormatter.error(res, 'Failed to get default template: ' + error.message, 500);
+    }
+  }
+
+  /**
+   * Set user's default template preference
+   */
+  async setDefaultTemplate(req: Request, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        ApiResponseFormatter.error(res, 'User not authenticated', 401);
+        return;
+      }
+
+      const { template } = req.body;
+
+      if (!template || !['classic', 'modern', 'compact'].includes(template)) {
+        ApiResponseFormatter.error(res, 'Invalid template. Must be classic, modern, or compact', 422);
+        return;
+      }
+
+      await prisma.user.update({
+        where: { id: req.user.id },
+        data: { defaultTemplate: template },
+      });
+
+      logger.info('Default template updated', {
+        userId: req.user.id,
+        template,
+      });
+
+      ApiResponseFormatter.success(
+        res,
+        { template },
+        'Default template updated successfully'
+      );
+    } catch (error: any) {
+      logger.error('Set default template error:', error);
+      ApiResponseFormatter.error(res, 'Failed to set default template: ' + error.message, 500);
     }
   }
 

@@ -223,14 +223,65 @@ export class QualityService {
         return false;
       }
 
-      // Only keep technical terms, skills, tools, technologies
+      // Filter out phrases containing common filler words (the, this, what, you, role, etc.)
+      const fillerWords = ['the', 'this', 'that', 'what', 'which', 'who', 'you', 'your', 'role', 'app', 'application', 'job', 'position'];
+      const words = lower.split(/\s+/);
+      const fillerCount = words.filter(w => fillerWords.includes(w)).length;
+      // If more than half the words are fillers, it's not a meaningful keyword
+      if (fillerCount > 0 && fillerCount / words.length > 0.5) {
+        return false;
+      }
+      
+      // Filter out phrases that start or end with filler words (e.g., "the role this", "what you")
+      if (fillerWords.includes(words[0]) || fillerWords.includes(words[words.length - 1])) {
+        // Allow if it's a technical term (e.g., "the cloud", "the api" - but these should be filtered by other rules)
+        // But reject if it's clearly a filler phrase
+        if (words.length <= 3 && fillerCount >= 2) {
+          return false;
+        }
+      }
+
+      // Filter out single common words that aren't technical
+      if (words.length === 1) {
+        const singleWord = words[0];
+        const nonTechnicalCommonWords = [
+          'app', 'application', 'role', 'job', 'position', 'work', 'team', 'company',
+          'this', 'that', 'what', 'which', 'who', 'you', 'your', 'the', 'a', 'an',
+          'open', 'close', 'new', 'old', 'first', 'last', 'next', 'previous'
+        ];
+        if (nonTechnicalCommonWords.includes(singleWord)) {
+          return false;
+        }
+      }
+
+      // Filter out phrases that are just common words (e.g., "the role this", "what you need")
+      const commonWordPhrases = [
+        'the role', 'this role', 'the role this', 'what you', 'what you need',
+        'the app', 'this app', 'the application', 'this application',
+        'the job', 'this job', 'the position', 'this position',
+        'you will', 'you must', 'you should', 'you need', 'you have',
+        'we are', 'we have', 'we need', 'we want', 'we offer',
+        'the team', 'this team', 'our team', 'the company', 'this company',
+        'the work', 'this work', 'the project', 'this project'
+      ];
+      if (commonWordPhrases.some(phrase => lower.includes(phrase) && lower.split(/\s+/).length <= 4)) {
+        return false;
+      }
+
+      // Only keep technical terms, skills, tools, technologies, or meaningful multi-word technical phrases
+      // A keyword should either be:
+      // 1. A single technical term (python, react, aws, etc.)
+      // 2. A multi-word technical phrase (machine learning, cloud computing, etc.)
+      // 3. A meaningful skill or methodology (agile development, test-driven development, etc.)
       return true;
     });
 
     // Only show warnings for truly critical missing keywords when the match score is low
-    // and we are in strict mode. If keywordMatch is already high (e.g. ATS shows 95–100%),
-    // we avoid noisy \"Missing X\" messages for company or context words.
-    if (!generateFreely && keywordMatch < 80 && criticalMissing.length > 0) {
+    // and we are in strict mode. If keywordMatch is already high (95%+), don't show warnings
+    // as the match is excellent. Also, if there are very few critical missing keywords (1-2),
+    // they're likely noise, so ignore them.
+    // Only show if: strict mode AND match < 80% AND more than 2 critical missing
+    if (!generateFreely && keywordMatch < 80 && criticalMissing.length > 2) {
       flags.hasMissingKeywords = true;
       const topMissing = criticalMissing.slice(0, 5);
       if (topMissing.length <= 3) {
@@ -422,12 +473,34 @@ export class QualityService {
     const capitalizedWords = text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g) || [];
     capitalizedWords.forEach((word) => {
       const clean = word.toLowerCase().trim();
+      const words = clean.split(/\s+/);
+      
       // Skip if it's a noise word
       if (noiseWords.has(clean)) return;
       // Skip if it's a number
       if (/^\d+$/.test(clean)) return;
       // Skip if it's too short
       if (clean.length < 3) return;
+      
+      // Skip phrases that start with common filler words (The, This, What, You, etc.)
+      const fillerStarters = ['the', 'this', 'that', 'what', 'which', 'who', 'you', 'your', 'our', 'we', 'they'];
+      if (words.length > 1 && fillerStarters.includes(words[0])) {
+        // Only allow if it's a known technical phrase (e.g., "The Cloud" -> "cloud" would be caught by patterns)
+        // But reject generic phrases like "The Role", "This Position", "What You"
+        const genericPhrases = ['role', 'position', 'job', 'work', 'team', 'company', 'app', 'application'];
+        if (genericPhrases.includes(words[1]) || words.length <= 3) {
+          return;
+        }
+      }
+      
+      // Skip single common words that aren't technical
+      if (words.length === 1) {
+        const nonTechnicalWords = ['app', 'application', 'role', 'job', 'position', 'work', 'team', 'company', 'this', 'that', 'what', 'you', 'your'];
+        if (nonTechnicalWords.includes(clean)) {
+          return;
+        }
+      }
+      
       // Skip company names (contain "inc", "llc", "corp", "company", or are common company patterns)
       if (clean.includes('inc') || clean.includes('llc') || clean.includes('corp') || 
           clean.includes('company') || clean.includes('health inc') || clean.includes('healthcare inc') ||
@@ -439,12 +512,28 @@ export class QualityService {
           !clean.includes('tech') && !clean.includes('software')) {
         return;
       }
+      
+      // Skip phrases that are clearly not technical (e.g., "The Role This", "What You Need")
+      if (words.length >= 2) {
+        const fillerWords = ['the', 'this', 'that', 'what', 'which', 'who', 'you', 'your', 'role', 'app', 'job', 'position'];
+        const fillerCount = words.filter(w => fillerWords.includes(w)).length;
+        // If more than half are fillers, skip it
+        if (fillerCount > 0 && fillerCount / words.length > 0.5) {
+          return;
+        }
+        // If it's a short phrase (2-3 words) and contains multiple fillers, skip it
+        if (words.length <= 3 && fillerCount >= 2) {
+          return;
+        }
+      }
+      
       keywords.add(clean);
     });
 
     // Filter out multi-word company names, generic phrases, and noise
     const filteredKeywords = Array.from(keywords).filter((kw) => {
       const lower = kw.toLowerCase();
+      const words = lower.split(/\s+/);
       
       // Skip if it looks like a company name
       if (lower.includes(' health') || lower.includes(' healthcare') || lower.match(/^[a-z]+\s+health/)) {
@@ -454,6 +543,41 @@ export class QualityService {
       // Skip generic words that slipped through (unless they're technical)
       if (['slack', 'email', 'phone', 'zoom', 'teams'].includes(lower) && !lower.includes('api') && !lower.includes('sdk')) {
         return false;
+      }
+      
+      // Skip single-word common non-technical terms
+      if (words.length === 1) {
+        const nonTechnicalSingleWords = ['app', 'application', 'role', 'job', 'position', 'work', 'team', 'company', 
+                                        'this', 'that', 'what', 'you', 'your', 'the', 'a', 'an', 'open', 'close'];
+        if (nonTechnicalSingleWords.includes(lower)) {
+          return false;
+        }
+      }
+      
+      // Skip phrases that are clearly filler/non-technical
+      const fillerWords = ['the', 'this', 'that', 'what', 'which', 'who', 'you', 'your', 'role', 'app', 'job', 'position', 'application'];
+      const fillerCount = words.filter(w => fillerWords.includes(w)).length;
+      
+      // Reject phrases where most words are fillers
+      if (words.length > 1 && fillerCount > 0 && fillerCount / words.length > 0.5) {
+        return false;
+      }
+      
+      // Reject short phrases (2-4 words) with multiple fillers
+      if (words.length >= 2 && words.length <= 4 && fillerCount >= 2) {
+        return false;
+      }
+      
+      // Reject phrases starting/ending with fillers (e.g., "the role this", "what you")
+      if (words.length >= 2 && (fillerWords.includes(words[0]) || fillerWords.includes(words[words.length - 1]))) {
+        // Only allow if it's a known technical phrase, otherwise reject
+        const knownTechnicalPhrases = ['machine learning', 'deep learning', 'natural language', 'artificial intelligence',
+                                      'cloud computing', 'data science', 'web development', 'mobile development',
+                                      'software engineering', 'system design', 'api design', 'user experience'];
+        const isKnownTechnical = knownTechnicalPhrases.some(phrase => lower.includes(phrase));
+        if (!isKnownTechnical && fillerCount >= 2) {
+          return false;
+        }
       }
       
       // Skip phrases containing job board boilerplate words

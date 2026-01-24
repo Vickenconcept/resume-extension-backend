@@ -11,12 +11,13 @@ datasource db {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  name      String
-  email     String   @unique
-  password  String
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id             Int      @id @default(autoincrement())
+  name           String
+  email          String   @unique
+  password       String
+  defaultTemplate String? @default("classic") @map("default_template") // classic, modern, compact
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   resumes Resume[]
   tokens  Token[]

@@ -4,11 +4,235 @@ import logger from '../utils/logger';
 import fs from 'fs';
 import path from 'path';
 
+export type ResumeTemplate = 'classic' | 'modern' | 'compact';
+
 export class DocumentService {
+  /**
+   * Get template-specific CSS styles
+   */
+  private getTemplateStyles(template: ResumeTemplate): string {
+    const templates: Record<ResumeTemplate, string> = {
+      classic: `
+        body {
+            font-family: 'Times New Roman', serif;
+            margin: 40px;
+            color: #000000;
+            line-height: 1.5;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            font-size: 18pt;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .contact {
+            font-size: 10pt;
+            margin-bottom: 20px;
+        }
+        h2 {
+            font-size: 12pt;
+            font-weight: bold;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            color: #000000;
+            text-transform: uppercase;
+            border-bottom: 2px solid #000000;
+            padding-bottom: 5px;
+        }
+        h3 {
+            font-size: 11pt;
+            font-weight: bold;
+            margin-top: 15px;
+            margin-bottom: 8px;
+            color: #000000;
+        }
+        p {
+            font-size: 11pt;
+            margin-bottom: 8px;
+            color: #000000;
+        }
+        ul {
+            margin-left: 20px;
+            margin-bottom: 15px;
+            padding-left: 0;
+        }
+        li {
+            font-size: 10pt;
+            margin-bottom: 6px;
+            color: #000000;
+            list-style-type: disc;
+        }
+        .experience-item {
+            margin-bottom: 15px;
+        }
+        .experience-title {
+            font-weight: bold;
+            font-size: 11pt;
+            margin-bottom: 5px;
+        }
+        .divider {
+            border-top: 1px solid #000000;
+            margin: 15px 0;
+            width: 100%;
+        }
+      `,
+      modern: `
+        body {
+            font-family: 'Calibri', 'Arial', sans-serif;
+            margin: 50px;
+            color: #2c3e50;
+            line-height: 1.6;
+            background: #ffffff;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 35px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #3498db;
+        }
+        .header h1 {
+            font-size: 20pt;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #2c3e50;
+            letter-spacing: 0.5px;
+        }
+        .contact {
+            font-size: 10pt;
+            margin-bottom: 20px;
+            color: #7f8c8d;
+        }
+        h2 {
+            font-size: 13pt;
+            font-weight: 600;
+            margin-top: 25px;
+            margin-bottom: 12px;
+            color: #2c3e50;
+            text-transform: uppercase;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 6px;
+            letter-spacing: 0.5px;
+        }
+        h3 {
+            font-size: 11pt;
+            font-weight: 600;
+            margin-top: 15px;
+            margin-bottom: 8px;
+            color: #34495e;
+        }
+        p {
+            font-size: 11pt;
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+        ul {
+            margin-left: 25px;
+            margin-bottom: 15px;
+            padding-left: 0;
+        }
+        li {
+            font-size: 10pt;
+            margin-bottom: 8px;
+            color: #2c3e50;
+            list-style-type: disc;
+        }
+        .experience-item {
+            margin-bottom: 18px;
+            padding-left: 10px;
+            border-left: 3px solid #ecf0f1;
+        }
+        .experience-title {
+            font-weight: 600;
+            font-size: 11pt;
+            margin-bottom: 6px;
+            color: #34495e;
+        }
+        .divider {
+            border-top: 1px solid #ecf0f1;
+            margin: 18px 0;
+            width: 100%;
+        }
+      `,
+      compact: `
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 30px;
+            color: #000000;
+            line-height: 1.4;
+        }
+        .header {
+            text-align: left;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            font-size: 16pt;
+            font-weight: bold;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+        .contact {
+            font-size: 9pt;
+            margin-bottom: 15px;
+        }
+        h2 {
+            font-size: 11pt;
+            font-weight: bold;
+            margin-top: 15px;
+            margin-bottom: 8px;
+            color: #000000;
+            text-transform: uppercase;
+            border-bottom: 1px solid #000000;
+            padding-bottom: 3px;
+        }
+        h3 {
+            font-size: 10pt;
+            font-weight: bold;
+            margin-top: 12px;
+            margin-bottom: 6px;
+            color: #000000;
+        }
+        p {
+            font-size: 10pt;
+            margin-bottom: 6px;
+            color: #000000;
+        }
+        ul {
+            margin-left: 18px;
+            margin-bottom: 12px;
+            padding-left: 0;
+        }
+        li {
+            font-size: 9pt;
+            margin-bottom: 4px;
+            color: #000000;
+            list-style-type: disc;
+        }
+        .experience-item {
+            margin-bottom: 12px;
+        }
+        .experience-title {
+            font-weight: bold;
+            font-size: 10pt;
+            margin-bottom: 4px;
+        }
+        .divider {
+            border-top: 1px solid #cccccc;
+            margin: 12px 0;
+            width: 100%;
+        }
+      `,
+    };
+    return templates[template];
+  }
   /**
    * Generate DOCX from structured data
    */
-  async generateDocxFromStructured(data: any): Promise<Buffer> {
+  async generateDocxFromStructured(data: any, template: ResumeTemplate = 'classic'): Promise<Buffer> {
     try {
       const doc = new Document({
         sections: [
@@ -23,7 +247,7 @@ export class DocumentService {
                 },
               },
             },
-            children: this.buildDocxContent(data),
+            children: this.buildDocxContent(data, template),
           },
         ],
       });
@@ -39,7 +263,7 @@ export class DocumentService {
   /**
    * Generate DOCX from plain text
    */
-  async generateDocxFromText(text: string): Promise<Buffer> {
+  async generateDocxFromText(text: string, template: ResumeTemplate = 'classic'): Promise<Buffer> {
     try {
       const lines = text.split('\n');
       const children: Paragraph[] = [];
@@ -280,9 +504,9 @@ export class DocumentService {
   /**
    * Generate PDF from structured data using Puppeteer
    */
-  async generatePdfFromStructured(data: any): Promise<Buffer> {
+  async generatePdfFromStructured(data: any, template: ResumeTemplate = 'classic'): Promise<Buffer> {
     try {
-      const html = this.buildResumeHtml(data);
+      const html = this.buildResumeHtml(data, template);
       return this.generatePdfFromHtml(html);
     } catch (error: any) {
       logger.error('PDF generation from structured error:', error);
@@ -293,9 +517,9 @@ export class DocumentService {
   /**
    * Generate PDF from plain text
    */
-  async generatePdfFromText(text: string): Promise<Buffer> {
+  async generatePdfFromText(text: string, template: ResumeTemplate = 'classic'): Promise<Buffer> {
     try {
-      const html = this.buildHtmlFromText(text);
+      const html = this.buildHtmlFromText(text, template);
       return this.generatePdfFromHtml(html);
     } catch (error: any) {
       logger.error('PDF generation from text error:', error);
@@ -351,7 +575,7 @@ export class DocumentService {
     }
   }
 
-  private buildDocxContent(data: any): Paragraph[] {
+  private buildDocxContent(data: any, template: ResumeTemplate = 'classic'): Paragraph[] {
     const children: Paragraph[] = [];
 
     // Header
@@ -607,79 +831,15 @@ export class DocumentService {
     return children;
   }
 
-  private buildResumeHtml(data: any): string {
-    // Build HTML from structured data - matching Laravel implementation
+  private buildResumeHtml(data: any, template: ResumeTemplate = 'classic'): string {
+    // Build HTML from structured data with template-specific styling
+    const templateStyles = this.getTemplateStyles(template);
     let html = `<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 40px;
-            color: #000000;
-            line-height: 1.6;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .header h1 {
-            font-size: 18pt;
-            font-weight: bold;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-        }
-        .contact {
-            font-size: 10pt;
-            margin-bottom: 20px;
-        }
-        h2 {
-            font-size: 12pt;
-            font-weight: bold;
-            margin-top: 20px;
-            margin-bottom: 10px;
-            color: #000000;
-            text-transform: uppercase;
-            border-bottom: 2px solid #000000;
-            padding-bottom: 5px;
-        }
-        h3 {
-            font-size: 11pt;
-            font-weight: bold;
-            margin-top: 15px;
-            margin-bottom: 8px;
-            color: #000000;
-        }
-        p {
-            font-size: 11pt;
-            margin-bottom: 8px;
-            color: #000000;
-        }
-        ul {
-            margin-left: 20px;
-            margin-bottom: 15px;
-            padding-left: 0;
-        }
-        li {
-            font-size: 10pt;
-            margin-bottom: 6px;
-            color: #000000;
-            list-style-type: disc;
-        }
-        .experience-item {
-            margin-bottom: 15px;
-        }
-        .experience-title {
-            font-weight: bold;
-            font-size: 11pt;
-            margin-bottom: 5px;
-        }
-        .divider {
-            border-top: 1px solid #000000;
-            margin: 15px 0;
-            width: 100%;
-        }
+        ${templateStyles}
         .skills-table {
             width: 100%;
             border-collapse: collapse;
@@ -859,7 +1019,7 @@ export class DocumentService {
     return html;
   }
 
-  private buildHtmlFromText(text: string): string {
+  private buildHtmlFromText(text: string, template: ResumeTemplate = 'classic'): string {
     // Convert plain text to HTML - matching Laravel implementation exactly
     const lines = text.split('\n');
     const htmlParts: string[] = [];
@@ -945,43 +1105,13 @@ export class DocumentService {
       htmlParts.push(`<p>${this.escapeHtml(currentParagraph.join(' '))}</p>`);
     }
 
+    const templateStyles = this.getTemplateStyles(template);
     return `<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 40px;
-            color: #000000;
-            line-height: 1.6;
-        }
-        h2 {
-            font-size: 12pt;
-            font-weight: bold;
-            margin-top: 20px;
-            margin-bottom: 10px;
-            color: #000000;
-            text-transform: uppercase;
-            border-bottom: 2px solid #000000;
-            padding-bottom: 5px;
-        }
-        p {
-            font-size: 11pt;
-            margin-bottom: 8px;
-            color: #000000;
-        }
-        ul {
-            margin-left: 20px;
-            margin-bottom: 15px;
-            padding-left: 0;
-        }
-        li {
-            font-size: 10pt;
-            margin-bottom: 6px;
-            color: #000000;
-            list-style-type: disc;
-        }
+        ${templateStyles}
     </style>
 </head>
 <body>

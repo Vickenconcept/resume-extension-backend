@@ -103,6 +103,12 @@ router.post('/promote-version-to-main', authenticate, (req, res) => resumeContro
 // POST /api/delete-resume-version - Delete a resume version
 router.post('/delete-resume-version', authenticate, (req, res) => resumeController.deleteResumeVersion(req, res));
 
+// GET /api/default-template - Get user's default template preference
+router.get('/default-template', authenticate, (req, res) => resumeController.getDefaultTemplate(req, res));
+
+// POST /api/default-template - Set user's default template preference
+router.post('/default-template', authenticate, (req, res) => resumeController.setDefaultTemplate(req, res));
+
 // POST /api/set-default-resume - Set default resume
 router.post('/set-default-resume', authenticate, (req, res) => resumeController.setDefaultResume(req, res));
 

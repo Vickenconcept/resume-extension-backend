@@ -55,13 +55,13 @@ export class OpenAIService {
       // Call OpenAI API
       const apiStartTime = Date.now();
       logger.info('OpenAI: Making API request', {
-        model: 'gpt-4o',
+        model: 'gpt-4o-mini',
         base_url: this.baseUrl,
         elapsed_ms: apiStartTime - serviceStartTime,
       });
 
       const response = await this.client.chat.completions.create({
-        model: 'gpt-4o',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -167,13 +167,13 @@ export class OpenAIService {
       // Call OpenAI API
       const apiStartTime = Date.now();
       logger.info('OpenAI: Making regeneration API request', {
-        model: 'gpt-4o',
+        model: 'gpt-4o-mini',
         base_url: this.baseUrl,
         elapsed_ms: apiStartTime - serviceStartTime,
       });
 
       const response = await this.client.chat.completions.create({
-        model: 'gpt-4o',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',

@@ -766,9 +766,36 @@ export class ResumeController {
         return;
       }
 
+      const user = req.user;
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 10;
       const skip = (page - 1) * limit;
+
+      // First, ensure only one resume is marked as default
+      const defaultResumes = await prisma.resume.findMany({
+        where: { userId: user.id, isDefault: true },
+        orderBy: { updatedAt: 'desc' },
+      });
+
+      if (defaultResumes.length > 1) {
+        // Keep only the most recently updated as default
+        const keepDefault = defaultResumes[0];
+        const toUnset = defaultResumes.slice(1);
+        
+        await prisma.resume.updateMany({
+          where: { 
+            id: { in: toUnset.map(r => r.id) },
+            userId: user.id 
+          },
+          data: { isDefault: false },
+        });
+        
+        logger.info('Fixed multiple default resumes', {
+          userId: user.id,
+          kept: keepDefault.id,
+          unset: toUnset.map(r => r.id),
+        });
+      }
 
       const [resumes, total] = await Promise.all([
         prisma.resume.findMany({
@@ -846,29 +873,31 @@ export class ResumeController {
 
       const user = req.user;
 
-      // Verify resume belongs to user
-      const resume = await prisma.resume.findFirst({
-        where: {
-          resumeId,
-          userId: user.id,
-        },
-      });
+      // Use a transaction to ensure atomicity
+      await prisma.$transaction(async (tx) => {
+        // First, verify resume belongs to user
+        const resume = await tx.resume.findFirst({
+          where: {
+            resumeId,
+            userId: user.id,
+          },
+        });
 
-      if (!resume) {
-        ApiResponseFormatter.error(res, 'Resume not found', 404);
-        return;
-      }
+        if (!resume) {
+          throw new Error('Resume not found');
+        }
 
-      // Unset all other defaults
-      await prisma.resume.updateMany({
-        where: { userId: user.id, isDefault: true },
-        data: { isDefault: false },
-      });
+        // Unset all other defaults for this user
+        await tx.resume.updateMany({
+          where: { userId: user.id, isDefault: true },
+          data: { isDefault: false },
+        });
 
-      // Set this resume as default
-      await prisma.resume.update({
-        where: { id: resume.id },
-        data: { isDefault: true },
+        // Set this resume as default
+        await tx.resume.update({
+          where: { id: resume.id },
+          data: { isDefault: true },
+        });
       });
 
       ApiResponseFormatter.success(res, null, 'Default resume updated successfully');
@@ -1459,47 +1488,45 @@ export class ResumeController {
         return;
       }
 
-      // Unset other current versions for this resume
-      await prisma.resumeVersion.updateMany({
-        where: { 
-          resumeId: version.resumeId, 
-          isCurrent: true,
-          id: { not: version.id },
-        },
-        data: { isCurrent: false },
-      });
-
-      // Set this version as current
-      await prisma.resumeVersion.update({
-        where: { id: version.id },
-        data: { isCurrent: true },
-      });
-
-      // Update the main resume with version's content
+      // Create a new resume record from the version
+      const newResumeId = `resume_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       const downloadUrls = version.downloadUrls as any || {};
-      await prisma.resume.update({
-        where: { id: version.resumeId },
+
+      const newResume = await prisma.resume.create({
         data: {
+          userId: user.id,
+          resumeId: newResumeId,
+          filename: `${version.versionName || `Version ${version.id}`}.docx`, // Generate a filename
+          displayName: version.versionName || `Version ${version.id}`,
+          cloudinaryUrl: version.resume.cloudinaryUrl, // Use original resume's cloudinary URL
+          cloudinaryPublicId: version.resume.cloudinaryPublicId, // Use original resume's public ID
+          parsedContent: version.resume.parsedContent as any, // Copy parsed content from original
           tailoredResumeText: version.tailoredResumeText,
           coverLetter: version.coverLetter || null,
           tailoredDocxUrl: version.tailoredDocxUrl || downloadUrls.docx || null,
           tailoredPdfUrl: version.tailoredPdfUrl || downloadUrls.pdf || null,
-          downloadUrls: version.downloadUrls || null,
+          downloadUrls: version.downloadUrls as any || null,
+          qualityScore: version.resume.qualityScore as any, // Copy quality score from original
+          similarityMetrics: version.resume.similarityMetrics as any, // Copy similarity metrics from original
+          isDefault: false, // New resume is not default
+          folder: version.resume.folder, // Copy folder from original
         },
       });
 
-      logger.info('Resume version promoted to main', {
+      logger.info('Resume version promoted to new resume', {
         versionId: version.id,
-        resumeId: version.resume.resumeId,
+        newResumeId: newResume.resumeId,
+        originalResumeId: version.resume.resumeId,
       });
 
       ApiResponseFormatter.success(
         res,
         { 
           versionId: version.id,
-          resumeId: version.resume.resumeId,
+          newResumeId: newResume.resumeId,
+          resumeId: newResume.resumeId,
         },
-        'Resume version promoted to main successfully'
+        'Resume version promoted to new resume successfully'
       );
     } catch (error: any) {
       logger.error('Promote version to main error:', error);

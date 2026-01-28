@@ -121,7 +121,7 @@ export class ResumeController {
     });
 
     try {
-      const { resumeId, jobDescription, generateFreely } = req.body;
+      const { resumeId, jobDescription, generateFreely, customMode, customInstructions } = req.body;
 
       if (!resumeId || !jobDescription) {
         ApiResponseFormatter.error(res, 'Resume ID and job description are required', 422);
@@ -140,6 +140,8 @@ export class ResumeController {
 
       const user = req.user;
       const generateFreelyMode = generateFreely === true || generateFreely === 'true';
+      const isCustomMode = customMode === true || customMode === 'true';
+      const userInstructions = (customInstructions && typeof customInstructions === 'string') ? customInstructions.trim() : '';
 
       // Load resume from database
       const dbStartTime = Date.now();
@@ -169,14 +171,17 @@ export class ResumeController {
         resume_id: resumeId,
         job_description_length: jobDescription.length,
         generate_freely: generateFreelyMode,
-        mode: generateFreelyMode ? 'flexible' : 'strict',
+        custom_mode: isCustomMode,
+        has_custom_instructions: !!userInstructions && userInstructions.length > 0,
+        mode: isCustomMode ? 'custom' : (generateFreelyMode ? 'flexible' : 'strict'),
         elapsed_ms: openAiStartTime - startTime,
       });
 
       const tailoredContent = await openAIService.tailorResume(
         resumeContent,
         jobDescription,
-        generateFreelyMode
+        generateFreelyMode,
+        isCustomMode ? userInstructions : undefined
       );
 
       const openAiTime = Date.now();
@@ -355,7 +360,7 @@ export class ResumeController {
     });
 
     try {
-      const { resumeId, jobDescription, generateFreely, missingKeywords, currentResumeText, matchedKeywords } = req.body;
+      const { resumeId, jobDescription, generateFreely, missingKeywords, currentResumeText, matchedKeywords, customMode, customInstructions } = req.body;
 
       if (!resumeId || !jobDescription) {
         ApiResponseFormatter.error(res, 'Resume ID and job description are required', 422);
@@ -369,6 +374,8 @@ export class ResumeController {
 
       const user = req.user;
       const generateFreelyMode = generateFreely === true || generateFreely === 'true';
+      const isCustomMode = customMode === true || customMode === 'true';
+      const userInstructions = (customInstructions && typeof customInstructions === 'string') ? customInstructions.trim() : '';
 
       // Load resume from database
       const resume = await prisma.resume.findFirst({
@@ -403,7 +410,8 @@ export class ResumeController {
         jobDescription,
         generateFreelyMode,
         missingKeywords || [],
-        matchedKeywords || []
+        matchedKeywords || [],
+        isCustomMode ? userInstructions : undefined
       );
 
       const openAiTime = Date.now();

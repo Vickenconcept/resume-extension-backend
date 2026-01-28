@@ -29,13 +29,30 @@ export interface SimilarityMetrics {
 
 export class QualityService {
   private semanticATSService: SemanticATSService | null = null;
+  private readonly useSemanticATS: boolean;
 
   constructor() {
-    try {
-      this.semanticATSService = new SemanticATSService();
-    } catch (error) {
-      logger.warn('Semantic ATS Service not available, using fallback', error);
-      this.semanticATSService = null; // Will use fallback methods if service unavailable
+    // Allow Semantic ATS usage to be toggled via environment variable.
+    // Default: true (preserve current behaviour) if flag not set.
+    const enableSemanticATS = process.env.ENABLE_SEMANTIC_ATS;
+    this.useSemanticATS =
+      enableSemanticATS === undefined || enableSemanticATS === 'true';
+
+    if (this.useSemanticATS) {
+      try {
+        this.semanticATSService = new SemanticATSService();
+      } catch (error) {
+        logger.warn(
+          'Semantic ATS Service not available, using fallback',
+          error,
+        );
+        this.semanticATSService = null; // Will use fallback methods if service unavailable
+      }
+    } else {
+      logger.info(
+        'Semantic ATS Service disabled via ENABLE_SEMANTIC_ATS flag, using fallback similarity only',
+      );
+      this.semanticATSService = null;
     }
   }
 
@@ -337,8 +354,8 @@ export class QualityService {
     jobDescription: string,
     generateFreely: boolean = false
   ): Promise<SimilarityMetrics> {
-    // Use AI-powered semantic analysis if available
-    if (this.semanticATSService !== null) {
+    // Use AI-powered semantic analysis if enabled and available
+    if (this.useSemanticATS && this.semanticATSService !== null) {
       try {
         const semanticResult = await this.semanticATSService.analyzeATSMatch(
           resumeContent,
@@ -448,27 +465,6 @@ export class QualityService {
     const normalized = text.toLowerCase();
     const keywords = new Set<string>();
 
-    // Extract technical terms (common patterns)
-    const technicalPatterns = [
-      /\b(python|java|javascript|typescript|react|vue|angular|node|django|flask|laravel|spring|express|next|nuxt)\b/gi,
-      /\b(aws|azure|gcp|docker|kubernetes|terraform|jenkins|gitlab|github|ci\/cd)\b/gi,
-      /\b(mysql|postgresql|mongodb|redis|elasticsearch|dynamodb)\b/gi,
-      /\b(agile|scrum|kanban|devops|tdd|bdd)\b/gi,
-      /\b(git|jira|confluence|slack|figma|sketch|tableau|power\s*bi)\b/gi,
-    ];
-
-    technicalPatterns.forEach((pattern) => {
-      const matches = text.match(pattern);
-      if (matches) {
-        matches.forEach((m) => {
-          const clean = m.toLowerCase().trim();
-          if (clean.length >= 3 && !noiseWords.has(clean)) {
-            keywords.add(clean);
-          }
-        });
-      }
-    });
-
     // Extract capitalized words (likely technologies, tools, skills)
     const capitalizedWords = text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g) || [];
     capitalizedWords.forEach((word) => {
@@ -501,15 +497,8 @@ export class QualityService {
         }
       }
       
-      // Skip company names (contain "inc", "llc", "corp", "company", or are common company patterns)
-      if (clean.includes('inc') || clean.includes('llc') || clean.includes('corp') || 
-          clean.includes('company') || clean.includes('health inc') || clean.includes('healthcare inc') ||
-          clean.match(/^[a-z]+\s+(inc|llc|corp|company)$/)) {
-        return;
-      }
-      // Skip generic industry words (unless they're part of a technical term)
-      if (['healthcare', 'health', 'care', 'business', 'industry', 'sector', 'field'].includes(clean) &&
-          !clean.includes('tech') && !clean.includes('software')) {
+      // Skip obvious company-legal suffixes (inc, llc, corp, company)
+      if (clean.includes(' inc') || clean.includes(' llc') || clean.includes(' corp') || clean.includes(' company')) {
         return;
       }
       
@@ -583,9 +572,8 @@ export class QualityService {
       // Skip phrases containing job board boilerplate words
       const boilerplateWords = ['posted', 'apply', 'save', 'share', 'intern', 'internship', 'work', 'home', 'united', 'states'];
       if (boilerplateWords.some(word => lower.includes(word))) {
-        // Only skip if it's clearly a boilerplate phrase, not a technical term
-        if (lower.match(/\b(posted|apply|save|share|intern|internship|work|home|united|states)\b/) && 
-            !lower.match(/\b(python|java|react|aws|docker|kubernetes|terraform|api|sdk|framework|library)\b/)) {
+        // Only skip if it's clearly a boilerplate phrase, not a potential skill phrase
+        if (lower.match(/\b(posted|apply|save|share|intern|internship|work|home|united|states)\b/)) {
           return false;
         }
       }

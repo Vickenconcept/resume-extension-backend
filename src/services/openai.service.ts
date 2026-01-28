@@ -22,7 +22,8 @@ export class OpenAIService {
   async tailorResume(
     resumeContent: ParsedResumeContent,
     jobDescription: string,
-    generateFreely: boolean = false
+    generateFreely: boolean = false,
+    customInstructions?: string
   ): Promise<TailoredResumeData> {
     const serviceStartTime = Date.now();
 
@@ -43,13 +44,14 @@ export class OpenAIService {
         seniority_rules: seniorityRules,
       });
       
-      const prompt = this.buildTailoringPrompt(resumeText, jobDescription, generateFreely, jobKeywords, roleLevel, seniorityRules);
+      const prompt = this.buildTailoringPrompt(resumeText, jobDescription, generateFreely, jobKeywords, roleLevel, seniorityRules, customInstructions);
 
       const formatTime = Date.now();
       logger.info('OpenAI: Resume formatted and prompt built', {
         duration_ms: formatTime - formatStartTime,
         resume_text_length: resumeText.length,
         prompt_length: prompt.length,
+        has_custom_instructions: !!customInstructions && customInstructions.length > 0,
       });
 
       // Call OpenAI API
@@ -58,24 +60,59 @@ export class OpenAIService {
         model: 'gpt-4o-mini',
         base_url: this.baseUrl,
         elapsed_ms: apiStartTime - serviceStartTime,
+        custom_mode: !!customInstructions && customInstructions.length > 0,
       });
 
+      // Build compact system message based on mode (custom / flexible / strict)
+      let systemMessage: string;
+      if (customInstructions && customInstructions.trim().length > 0) {
+        // Custom mode: user instructions are top priority and model has freedom to modify content
+        systemMessage = [
+          "You are an expert resume writer.",
+          "- Follow the user's custom instructions as the top priority.",
+          "- Use the provided resume and job description as context.",
+          "- You may add, remove, or change content to satisfy the user's request while keeping it believable and professional.",
+          "- Output only valid JSON in the requested schema.",
+        ].join('\n');
+      } else if (generateFreely) {
+        // Flexible mode: improve match, can add reasonable content consistent with background
+        systemMessage = [
+          "You are an expert resume writer.",
+          "- Improve alignment between the resume and the job description.",
+          "- You may add reasonable skills or phrases that are consistent with the candidate's background.",
+          "- Keep the resume believable, professional, and coherent.",
+          "- Output only valid JSON in the requested schema.",
+        ].join('\n');
+      } else {
+        // Strict mode: rephrase/reorder only, no new skills/experience
+        systemMessage = [
+          "You are an expert resume writer.",
+          "- Do NOT add any skills or experience that are not present in the original resume.",
+          "- Only rephrase, reorganize, or lightly emphasize existing content to better match the job description.",
+          "- Preserve factual accuracy at all times.",
+          "- Output only valid JSON in the requested schema.",
+        ].join('\n');
+      }
+
+      // Use higher temperature and more tokens for custom mode to allow more creative/free generation
+      const isCustomMode = customInstructions && customInstructions.trim().length > 0;
+      const temperature = isCustomMode ? 0.9 : 0.7; // Higher temperature for more creative/free generation in custom mode
+      const maxTokens = isCustomMode ? 3000 : 2000; // More tokens for comprehensive resumes with all keywords
+      
       const response = await this.client.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
-            content: generateFreely
-              ? "You are an expert resume writer and career advisor. Your task is to tailor resume content to match job descriptions. In flexible mode, you may enhance and expand on the user's actual experience to better match the role, but you must stay grounded in their real qualifications and never invent completely new experiences or companies."
-              : "You are an expert resume writer and career advisor. Your task is to tailor resume content to match job descriptions while being truthful and only using information from the provided resume. Never invent experience or skills that are not present in the original resume.",
+            content: systemMessage,
           },
           {
             role: 'user',
             content: prompt,
           },
         ],
-        temperature: 0.7,
-        max_tokens: 2000,
+        temperature: temperature,
+        max_tokens: maxTokens,
         response_format: { type: 'json_object' },
       });
 
@@ -89,9 +126,13 @@ export class OpenAIService {
 
       logger.info('OpenAI: Full AI response received', {
         generate_freely: generateFreely,
-        mode: generateFreely ? 'flexible' : 'strict',
+        custom_mode: !!(customInstructions && customInstructions.trim().length > 0),
+        mode: customInstructions && customInstructions.trim().length > 0
+          ? 'custom'
+          : generateFreely
+            ? 'flexible'
+            : 'strict',
         response_length: content.length,
-        full_response: content,
       });
 
       // Parse the response
@@ -128,7 +169,8 @@ export class OpenAIService {
     jobDescription: string,
     generateFreely: boolean = false,
     missingKeywords: string[] = [],
-    matchedKeywords: string[] = []
+    matchedKeywords: string[] = [],
+    customInstructions?: string
   ): Promise<TailoredResumeData> {
     const serviceStartTime = Date.now();
 
@@ -153,7 +195,8 @@ export class OpenAIService {
         missingKeywords,
         matchedKeywords,
         roleLevel,
-        seniorityRules
+        seniorityRules,
+        customInstructions
       );
 
       const formatTime = Date.now();
@@ -172,95 +215,57 @@ export class OpenAIService {
         elapsed_ms: apiStartTime - serviceStartTime,
       });
 
+      // Build compact system message for regeneration (custom / flexible / strict)
+      let regenerateSystemMessage: string;
+      if (customInstructions && customInstructions.trim().length > 0) {
+        // Custom mode: user instructions are top priority and model has freedom to modify content
+        regenerateSystemMessage = [
+          "You are an expert resume writer.",
+          "- Follow the user's custom instructions as the top priority when regenerating the resume.",
+          "- Use the current resume, job description, missingKeywords and matchedKeywords as context.",
+          "- You may add, remove, or change content to produce a stronger, more targeted resume while keeping it believable and professional.",
+          "- Output only valid JSON in the requested schema.",
+        ].join('\n');
+      } else if (generateFreely) {
+        // Flexible mode: improve match, can add reasonable content based on missingKeywords
+        regenerateSystemMessage = [
+          "You are an expert resume writer.",
+          "- Regenerate the resume to better match the job description and improve ATS keyword coverage.",
+          "- Use missingKeywords to guide additions and matchedKeywords to preserve what is already working.",
+          "- You may add reasonable skills or phrases that are consistent with the candidate's background.",
+          "- Keep the resume natural, human-sounding, and professional.",
+          "- Output only valid JSON in the requested schema.",
+        ].join('\n');
+      } else {
+        // Strict mode: rephrase/reorder only, no new skills/experience
+        regenerateSystemMessage = [
+          "You are an expert resume writer.",
+          "- Do NOT add any skills, tools, or experience that are not present in the original resume.",
+          "- Only rephrase, reorganize, or slightly emphasize existing content to better match the job description.",
+          "- Preserve factual accuracy at all times and keep the tone professional.",
+          "- Output only valid JSON in the requested schema.",
+        ].join('\n');
+      }
+      
+      // Use higher temperature and more tokens for custom mode
+      const isCustomMode = customInstructions && customInstructions.trim().length > 0;
+      const regenerateTemperature = isCustomMode ? 0.9 : (generateFreely ? 0.5 : 0.2);
+      const regenerateMaxTokens = 4000;
+      
       const response = await this.client.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
-            content: generateFreely
-              ? `You are a professional resume editor and ATS optimization specialist. Your task is to intelligently enhance a resume to achieve high keyword match while maintaining natural, human-sounding language.
-
-🎯 FLEXIBLE MODE OBJECTIVE:
-Intelligently add missing keywords from the job description to achieve 95-100% ATS match, but frame them at an implementation/integration level, not as deep specialization. The resume must sound like it was written by a human career strategist, not an AI keyword stuffer.
-
-✅ ALLOWED INTELLIGENT ADDITIONS (With Plausibility Guardrails):
-
-1. ADJACENT SKILLS/TOOLS (Safe to Add Naturally):
-   - If resume shows experience in a domain/category, can add related tools/skills from the same category
-   - Examples: Cloud platforms → related cloud services, Design tools → related design software, Marketing platforms → related marketing tools, Medical systems → related healthcare software
-   - Frame as: "integrated", "worked with", "implemented using", "leveraged services such as", "utilized", "collaborated with"
-
-2. SKILLS SECTION:
-   - Can add missing skills/tools to skills section if they are adjacent to existing skills in the same category
-   - This is safe - skills lists are expected to be comprehensive
-   - Works for ALL domains: technical tools, software platforms, methodologies, certifications, etc.
-
-3. EXPERIENCE BULLETS:
-   - Can enhance bullets to include missing keywords BUT use soft integration language
-   - Prefer: "Integrated [category] services including [keyword]" NOT "Built [keyword] systems"
-   - Prefer: "Worked with [tool/platform]" NOT "Architected [tool/platform] infrastructure"
-   - Prefer: "Implemented features using [tool]" NOT "Designed [tool] from scratch"
-   - Prefer: "Utilized [methodology]" NOT "Created [methodology] framework"
-
-🚫 FORBIDDEN (Even in Flexible Mode):
-- Do NOT add deep specialization claims that require extensive expertise (e.g., specialized certifications, advanced methodologies, expert-level roles)
-- Do NOT add domain expertise not supported by resume (e.g., healthcare compliance if no healthcare background, financial regulations if no finance background)
-- Do NOT create new achievements, metrics, or projects
-- Do NOT imply seniority beyond what the resume shows
-- Do NOT use deep-expert phrasing for newly added skills (e.g., "architected", "designed from scratch", "created framework" for newly added items)
-
-🔑 KEYWORD INTEGRATION RULES (Domain-Agnostic):
-- Use softer integration language: "integrated", "worked with", "implemented using", "leveraged", "utilized", "collaborated with"
-- Frame at implementation/integration level, not deep specialization
-- Make it sound like natural career positioning, not fabrication
-- If a keyword is too far from existing experience, add it only to skills section, not experience bullets
-- Works for ALL domains: technical, healthcare, finance, marketing, design, operations, etc.
-
-🎯 QUALITY CHECK:
-The resume should read like a human career strategist positioned the candidate for this role, not like an AI stuffed keywords. Naturalness and believability are more important than 100% keyword coverage.`
-              : `You are a professional resume editor in STRICT MODE. Your task is to improve alignment between a resume and job description while maintaining 100% factual accuracy.
-
-🚨 STRICT MODE RULES (CRITICAL - NO EXCEPTIONS):
-
-MODE LOCK: You are in STRICT MODE. This means you MUST preserve factual accuracy above all else.
-
-🚫 ABSOLUTELY FORBIDDEN (DO NOT DO THESE):
-- Do NOT add any new skills, tools, technologies, certifications, degrees, job titles, companies, or responsibilities that are not explicitly present in the original resume
-- Do NOT add technologies/tools mentioned in job description if they are not in the original resume (e.g., if JD mentions "Figma" but resume doesn't, DO NOT add it)
-- Do NOT add frameworks to specific job entries unless they were already tied to that job in the original resume
-- Do NOT add industries or domains not mentioned in the original resume
-- Do NOT invent domain experience unless clearly stated in the resume
-- Do NOT create new achievements, metrics, or projects
-- Do NOT add new responsibilities or capabilities not stated in the original resume
-
-✅ ALLOWED IN STRICT MODE (ONLY THESE):
-- Rephrase existing content to better align with job description
-- Reorder or reorganize existing information for better relevance
-- Emphasize existing skills/experiences that match the job
-- Map existing skills to job terminology (e.g., "REST APIs" → "RESTful API development")
-- Improve clarity and flow of existing bullets
-- Replace weak verbs with stronger ones (but never downgrade)
-
-🎯 KEY PRINCIPLE:
-You may ONLY work with what is already in the resume. You may rephrase, reorganize, and emphasize, but you may NOT introduce new technologies, tools, industries, responsibilities, or capabilities. The resume is the ONLY source of truth.
-
-✅ ALLOWED IMPROVEMENTS:
-- Rephrase existing bullet points to better align with job description
-- Make achievements more results-oriented using the original meaning
-- Emphasize experience that matches the job description IF it already exists
-- Replace weak verbs with stronger ones (but never downgrade)
-- Improve keyword alignment ONLY where there is clear evidence in the resume
-
-🔑 KEYWORD RULE:
-You may only use a keyword from the job description if the resume already demonstrates that skill or experience, even if phrased differently. If there is no clear evidence, OMIT the keyword. ACCURACY IS MORE IMPORTANT THAN MATCH SCORE.`,
+            content: regenerateSystemMessage,
           },
           {
             role: 'user',
             content: prompt,
           },
         ],
-        temperature: 0.2, // Low temperature for factual adherence and accuracy
-        max_tokens: 4000, // Increased to ensure full content is generated with all keywords added
+        temperature: regenerateTemperature,
+        max_tokens: regenerateMaxTokens,
         response_format: { type: 'json_object' },
       });
 
@@ -372,9 +377,69 @@ IMPORTANT: Based on this context, ${requiredTone === 'ownership-driven' ? 'MAINT
     missingKeywords: string[] = [],
     matchedKeywords: string[] = [],
     roleLevel: 'intern' | 'junior' | 'mid' | 'senior' | 'staff' = 'mid',
-    seniorityRules?: { verbs: string[]; avoidVerbs: string[]; scope: string; leadership: boolean; architecture: boolean; keywordStrength: 'exploratory' | 'practical' | 'strategic' }
+    seniorityRules?: { verbs: string[]; avoidVerbs: string[]; scope: string; leadership: boolean; architecture: boolean; keywordStrength: 'exploratory' | 'practical' | 'strategic' },
+    customInstructions?: string
   ): string {
     const rules = seniorityRules || this.getSeniorityLanguageRules(roleLevel);
+    
+    // If custom instructions are provided, prioritize them
+    if (customInstructions && customInstructions.trim().length > 0) {
+      // Domain-agnostic noise filtering using regex patterns
+      const filteredMissingKeywords = missingKeywords.filter(kw => {
+        return this.isLikelySkillKeyword(kw);
+      });
+
+      const missingKeywordsList = filteredMissingKeywords.length > 0 
+        ? filteredMissingKeywords.map((kw, idx) => `${idx + 1}. "${kw}"`).join('\n')
+        : 'None specified - but ensure ALL keywords from job description are included';
+
+      // Check if user wants all keywords included
+      const wantsAllKeywords = customInstructions.toLowerCase().includes('all keywords') || 
+                                customInstructions.toLowerCase().includes('missing nothing') ||
+                                customInstructions.toLowerCase().includes('use all keywords') ||
+                                customInstructions.toLowerCase().includes('include all') ||
+                                customInstructions.toLowerCase().includes('every keyword');
+      
+      return `You are a senior technical recruiter and resume strategist. Your job is to regenerate this resume based on the user's custom instructions. You have FULL FREEDOM - NO RESTRICTIONS.
+
+🚨 CUSTOM MODE REGENERATION - USER INSTRUCTIONS ARE ABSOLUTE PRIORITY:
+The user has provided specific instructions. Follow them EXACTLY. You have complete freedom to add, modify, or enhance anything based on their instructions.
+
+USER'S CUSTOM INSTRUCTIONS:
+${customInstructions}
+
+${wantsAllKeywords ? `\n🎯 CRITICAL: The user wants ALL keywords included. You MUST add EVERY missing keyword to the resume. No exceptions.\n` : ''}
+
+🎯 PRIMARY OBJECTIVES (IN ORDER OF PRIORITY):
+1. Follow the user's custom instructions EXACTLY (ABSOLUTE HIGHEST PRIORITY - NO RESTRICTIONS)
+2. ${wantsAllKeywords ? 'MANDATORY: Add ALL missing keywords to skills section AND integrate into experience bullets' : 'Add missing keywords naturally while following custom instructions'}
+3. Maintain human-sounding, believable language
+4. Preserve matched keywords that are already working well
+
+CRITICAL RULES FOR CUSTOM MODE REGENERATION (VERY FREE):
+- The user's custom instructions override EVERYTHING - follow them exactly
+- ${wantsAllKeywords ? 'MANDATORY: Add ALL missing keywords. Every single one must appear in the resume.' : 'Add missing keywords as specified in user instructions'}
+- You have FULL FREEDOM to add, modify, or enhance any part of the resume
+- No restrictions on adding skills, technologies, or experiences
+- Make all changes feel natural and professional while being comprehensive
+- Keep the resume structure consistent
+
+CURRENT RESUME TEXT:
+${resumeText}
+
+JOB DESCRIPTION:
+${jobDescription}
+
+${wantsAllKeywords ? `\n🚨 MISSING KEYWORDS TO ADD (MANDATORY - ADD ALL OF THESE):\n${missingKeywordsList}\n\n⚠️ CRITICAL: Every keyword listed above MUST be added to the resume. Add them to skills section and integrate into experience bullets where relevant.\n` : `\nMISSING KEYWORDS TO ADD (if they fit with custom instructions):\n${missingKeywordsList}\n`}
+
+MATCHED KEYWORDS TO PRESERVE:
+${matchedKeywords.length > 0 ? matchedKeywords.slice(0, 30).join(', ') : 'None specified'}
+
+Your task: Return a STRUCTURED JSON object with the regenerated resume data and cover letter. ${wantsAllKeywords ? 'MANDATORY: Include ALL missing keywords. Add them to skills section and integrate into experience bullets.' : 'Follow the custom instructions while naturally incorporating missing keywords where they fit.'} Use the same JSON format as the tailoring prompt.
+
+${wantsAllKeywords ? '⚠️ FINAL CHECK: Before returning, verify that EVERY missing keyword appears in the resume. If any are missing, ADD them immediately.' : ''}`;
+    }
+    
     // Domain-agnostic noise filtering using regex patterns
     const filteredMissingKeywords = missingKeywords.filter(kw => {
       return this.isLikelySkillKeyword(kw);
@@ -1208,9 +1273,127 @@ MANDATORY REQUIREMENTS:
     generateFreely: boolean,
     jobKeywords: string[] = [],
     roleLevel: 'intern' | 'junior' | 'mid' | 'senior' | 'staff' = 'mid',
-    seniorityRules?: { verbs: string[]; avoidVerbs: string[]; scope: string; leadership: boolean; architecture: boolean; keywordStrength: 'exploratory' | 'practical' | 'strategic' }
+    seniorityRules?: { verbs: string[]; avoidVerbs: string[]; scope: string; leadership: boolean; architecture: boolean; keywordStrength: 'exploratory' | 'practical' | 'strategic' },
+    customInstructions?: string
   ): string {
     const rules = seniorityRules || this.getSeniorityLanguageRules(roleLevel);
+    
+    // If custom instructions are provided, use them as the primary guidance
+    if (customInstructions && customInstructions.trim().length > 0) {
+      // Check if user wants all keywords included
+      const wantsAllKeywords = customInstructions.toLowerCase().includes('all keywords') || 
+                                customInstructions.toLowerCase().includes('missing nothing') ||
+                                customInstructions.toLowerCase().includes('use all keywords') ||
+                                customInstructions.toLowerCase().includes('include all') ||
+                                customInstructions.toLowerCase().includes('every keyword');
+      
+      return `You are helping a job seeker tailor their resume to a specific job description and generate a professional cover letter based on their custom instructions.
+
+⚠️ DOMAIN-AGNOSTIC INSTRUCTION: This app works for ALL job types (software engineering, healthcare, finance, marketing, sales, operations, etc.). Ignore any non-skill keywords like dates, locations, company names, application instructions, or posting metadata. Only treat as important if they are actual required skills/tools/qualifications. Use semantic understanding to distinguish real skills from job posting boilerplate.
+
+🚨 CUSTOM MODE - USER INSTRUCTIONS (ABSOLUTE PRIORITY - NO RESTRICTIONS):
+The user has provided specific instructions for how they want their resume to be tailored. You have FULL FREEDOM to follow these instructions. There are NO restrictions on what you can add or modify.
+
+USER'S CUSTOM INSTRUCTIONS:
+${customInstructions}
+
+${wantsAllKeywords ? `\n🎯 CRITICAL: The user wants ALL keywords included. You MUST add EVERY keyword from the job description to the resume, including:
+- All technologies, tools, frameworks mentioned
+- All skills, methodologies, concepts
+- All certifications, platforms, services
+- Missing keywords MUST be added to skills section AND integrated into experience bullets where relevant
+- NO keyword should be left out - achieve 100% keyword coverage\n` : ''}
+
+CRITICAL RULES FOR CUSTOM MODE (VERY FREE - NO RESTRICTIONS):
+1. PRIMARY GOAL: Follow the user's custom instructions EXACTLY as specified - they are the absolute authority
+2. FULL FREEDOM: You can add, modify, enhance, or expand ANY part of the resume based on user instructions
+3. KEYWORD INCLUSION: ${wantsAllKeywords ? 'MANDATORY: Include EVERY keyword from the job description. Add missing keywords to skills section and integrate them into experience bullets naturally.' : 'If user asks for keywords, include ALL keywords from job description'}
+4. NO RESTRICTIONS: Custom mode has NO restrictions on adding skills, technologies, or experiences - follow user's instructions
+5. Use the job description as context, but the user's custom instructions are the PRIMARY driver
+6. Keep personal information (name, contact, address) exactly as provided
+7. You can modify, enhance, or rewrite any section based on user instructions
+8. Use measurable language (numbers, percentages, metrics) - you can add reasonable metrics if they help match instructions
+9. Make the resume feel natural and professional while aggressively following user instructions
+10. The custom instructions override ALL other rules - be creative and comprehensive
+
+ORIGINAL RESUME:
+${resumeText}
+
+JOB DESCRIPTION (for context):
+${jobDescription}
+
+${jobKeywords.length > 0 ? `\n🚨 KEYWORDS FROM JOB DESCRIPTION ${wantsAllKeywords ? '(MANDATORY - MUST INCLUDE ALL OF THESE)' : '(use as context, but prioritize custom instructions)'}:\n${jobKeywords.slice(0, 100).join(', ')}\n${wantsAllKeywords ? '\n⚠️ CRITICAL: The user wants ALL keywords included. Every keyword listed above MUST appear in the tailored resume. Add missing ones to skills section and integrate into experience bullets.\n' : ''}` : ''}
+
+Your task: Return a STRUCTURED JSON object with the tailored resume data and cover letter. Use this EXACT format (no markdown, just valid JSON):
+
+{
+  "header": {
+    "name": "Full name from resume",
+    "title": "Professional title or role (optional)",
+    "contact": {
+      "phone": "Phone number if present",
+      "email": "Email address",
+      "linkedin": "LinkedIn username if present",
+      "github": "GitHub username if present",
+      "location": "City, State/Country if present"
+    }
+  },
+  "summary": "Tailored professional summary paragraph (2-4 sentences, following custom instructions)",
+  "education": [
+    {
+      "degree": "Degree name",
+      "school": "School name",
+      "location": "Location if present",
+      "year": "Graduation year or date"
+    }
+  ],
+  "skills": {
+    "languages": ["Language 1", "Language 2"],
+    "frameworks": ["Framework 1", "Framework 2"],
+    "devops": ["Tool 1", "Tool 2"],
+    "databases": ["Database 1", "Database 2"],
+    "other": ["Skill 1", "Skill 2"]
+  },
+  "experience": [
+    {
+      "role": "Job title",
+      "company": "Company name",
+      "location": "Location if present",
+      "period": "Start date – End date or Present",
+      "bullets": [
+        "Tailored bullet point 1 (following custom instructions)",
+        "Tailored bullet point 2",
+        "Tailored bullet point 3"
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "name": "Project name",
+      "url": "URL if present"
+    }
+  ],
+  "languages": [
+    {
+      "language": "Language name",
+      "proficiency": "Proficiency level"
+    }
+  ],
+  "coverLetter": "A professional cover letter (3-4 paragraphs) expressing interest, highlighting 2-3 relevant experiences/skills, and showing fit for the role. Use the person's name from the resume."
+}
+
+MANDATORY REQUIREMENTS FOR CUSTOM MODE:
+- Follow the user's custom instructions EXACTLY - they are the absolute priority
+- ${wantsAllKeywords ? 'MANDATORY: Include EVERY keyword from the job description. Add missing keywords to skills section and integrate into experience bullets.' : 'Include keywords as specified in user instructions'}
+- You have FULL FREEDOM to add, modify, or enhance any part of the resume based on user instructions
+- Include ALL information from the original resume (unless custom instructions specify otherwise)
+- Use the job description as context, but prioritize custom instructions
+- Make changes feel natural and professional while being comprehensive
+- Keep the structure consistent and complete
+- The resume should reflect EXACTLY what the user wants - be aggressive in following their instructions
+- ${wantsAllKeywords ? 'VERIFY: Before finalizing, check that EVERY keyword from the job description appears in the resume. If any are missing, ADD them immediately.' : ''}`;
+    }
+    
     if (generateFreely) {
       return `You are helping a job seeker tailor their resume to a specific job description and generate a professional cover letter.
 

@@ -367,7 +367,7 @@ export class DocumentService {
           paragraphs.push(new Paragraph({
             children: headerRuns,
             spacing: { before: 480, after: 120 },
-            borders: {
+            border: {
               bottom: {
                 color: '000000',
                 size: 120,
@@ -682,7 +682,7 @@ export class DocumentService {
                 }),
               ],
               spacing: { before: 480, after: 120 },
-              borders: {
+              border: {
                 bottom: {
                   color: '000000',
                   size: 120, // 6pt border (equivalent to 2px)
@@ -846,7 +846,7 @@ export class DocumentService {
     }
   }
 
-  private async generatePdfFromHtml(html: string): Promise<Buffer> {
+  async generatePdfFromHtml(html: string): Promise<Buffer> {
     try {
       // Try to find Chrome/Chromium executable
       const executablePath = await this.findChromeExecutable();
@@ -955,7 +955,7 @@ export class DocumentService {
             }),
           ],
           spacing: { before: 480, after: 120 },
-          borders: {
+          border: {
             bottom: {
               color: '000000',
               size: 240, // 12pt border
@@ -991,7 +991,7 @@ export class DocumentService {
             }),
           ],
           spacing: { before: 480, after: 120 },
-          borders: {
+          border: {
             bottom: {
               color: '000000',
               size: 240, // 12pt border
@@ -1034,7 +1034,7 @@ export class DocumentService {
             }),
           ],
           spacing: { before: 480, after: 120 },
-          borders: {
+          border: {
             bottom: {
               color: '000000',
               size: 240, // 12pt border
@@ -1096,7 +1096,7 @@ export class DocumentService {
             }),
           ],
           spacing: { before: 480, after: 120 },
-          borders: {
+          border: {
             bottom: {
               color: '000000',
               size: 240, // 12pt border

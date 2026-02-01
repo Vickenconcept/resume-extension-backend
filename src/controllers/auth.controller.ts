@@ -208,8 +208,9 @@ export class AuthController {
       throw new Error('JWT_SECRET is not configured');
     }
 
+    const expiresIn = process.env.JWT_EXPIRES_IN || '7d';
     return jwt.sign(payload, jwtSecret, {
-      expiresIn: process.env.JWT_EXPIRES_IN || '7d',
-    });
+      expiresIn,
+    } as jwt.SignOptions);
   }
 }

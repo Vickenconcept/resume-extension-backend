@@ -44,10 +44,17 @@ export class AdminController {
       }
 
       // Generate JWT token
+      const jwtSecret = process.env.JWT_SECRET || 'your-secret-key';
+      if (!jwtSecret) {
+        ApiResponseFormatter.error(res, 'JWT_SECRET is not configured', 500);
+        return;
+      }
+      
+      const expiresIn = process.env.JWT_EXPIRES_IN || '7d';
       const token = jwt.sign(
         { userId: user.id, email: user.email, role: user.role },
-        process.env.JWT_SECRET || 'your-secret-key',
-        { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+        jwtSecret,
+        { expiresIn } as jwt.SignOptions
       );
 
       ApiResponseFormatter.success(

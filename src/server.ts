@@ -13,17 +13,19 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
+const allowedOrigins: (string | RegExp)[] = [
+  'http://localhost:3000',
+  'http://localhost:3002', // Admin dashboard
+  'http://localhost:5173',
+  'http://localhost:8000',
+  /^chrome-extension:\/\/.*$/,
+  /^https:\/\/.*\.ngrok-free\.(app|dev|io)$/,
+  /^https:\/\/.*\.ngrok\.io$/,
+  /^https:\/\/.*\.ngrok/,
+];
+
 app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:3002', // Admin dashboard
-    'http://localhost:5173',
-    'http://localhost:8000',
-    /^chrome-extension:\/\/.*$/,
-    /^https:\/\/.*\.ngrok-free\.(app|dev|io)$/,
-    /^https:\/\/.*\.ngrok\.io$/,
-    /^https:\/\/.*\.ngrok/,
-  ],
+  origin: allowedOrigins.length > 0 ? allowedOrigins : true,
   credentials: true,
   allowedHeaders: [
     'Content-Type',

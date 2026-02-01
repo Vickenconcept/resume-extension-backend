@@ -209,8 +209,6 @@ export class AuthController {
     }
 
     const expiresIn = process.env.JWT_EXPIRES_IN || '7d';
-    return jwt.sign(payload, jwtSecret, {
-      expiresIn,
-    } as jwt.SignOptions);
+    return jwt.sign(payload, jwtSecret, { expiresIn: expiresIn } as jwt.SignOptions);
   }
 }

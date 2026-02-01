@@ -54,7 +54,7 @@ export class AdminController {
       const token = jwt.sign(
         { userId: user.id, email: user.email, role: user.role },
         jwtSecret,
-        { expiresIn } as jwt.SignOptions
+        { expiresIn: expiresIn } as jwt.SignOptions
       );
 
       ApiResponseFormatter.success(

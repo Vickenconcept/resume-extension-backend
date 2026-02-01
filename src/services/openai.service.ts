@@ -98,7 +98,7 @@ export class OpenAIService {
       const isCustomMode = customInstructions && customInstructions.trim().length > 0;
       const temperature = isCustomMode ? 0.9 : 0.7; // Higher temperature for more creative/free generation in custom mode
       const maxTokens = isCustomMode ? 3000 : 2000; // More tokens for comprehensive resumes with all keywords
-      
+
       const response = await this.client.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [
@@ -251,7 +251,7 @@ export class OpenAIService {
       const isCustomMode = customInstructions && customInstructions.trim().length > 0;
       const regenerateTemperature = isCustomMode ? 0.9 : (generateFreely ? 0.5 : 0.2);
       const regenerateMaxTokens = 4000;
-      
+
       const response = await this.client.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [

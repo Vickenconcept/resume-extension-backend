@@ -130,6 +130,7 @@ declare global {
         id: number;
         email: string;
         name: string;
+        role?: string;
       };
     }
   }

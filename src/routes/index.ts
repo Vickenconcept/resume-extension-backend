@@ -3,7 +3,11 @@ import multer from 'multer';
 import { AuthController } from '../controllers/auth.controller';
 import { ResumeController } from '../controllers/resume.controller';
 import { FeedbackController } from '../controllers/feedback.controller';
+import { PaymentController } from '../controllers/payment.controller';
+import { AdminController } from '../controllers/admin.controller';
 import { authenticate } from '../middleware/auth';
+import { requireAdmin } from '../middleware/admin';
+import { adminAuthenticate } from '../middleware/adminAuth';
 import { ApiResponseFormatter } from '../utils/response';
 import logger from '../utils/logger';
 
@@ -11,6 +15,8 @@ const router = Router();
 const authController = new AuthController();
 const resumeController = new ResumeController();
 const feedbackController = new FeedbackController();
+const paymentController = new PaymentController();
+const adminController = new AdminController();
 
 // Configure multer for file uploads
 const upload = multer({
@@ -118,7 +124,58 @@ router.post('/update-resume-name', authenticate, (req, res) => resumeController.
 // POST /api/delete-resume - Delete resume
 router.post('/delete-resume', authenticate, (req, res) => resumeController.deleteResume(req, res));
 
-// POST /api/submit-feedback - Submit user feedback
-router.post('/submit-feedback', authenticate, (req, res) => feedbackController.submitFeedback(req, res));
+// Feedback routes
+// POST /api/feedback - Submit user feedback (thumbs up/down)
+router.post('/feedback', authenticate, (req, res) => feedbackController.submitFeedback(req, res));
+
+// GET /api/feedback - Get user's own feedback
+router.get('/feedback', authenticate, (req, res) => feedbackController.getUserFeedback(req, res));
+
+// GET /api/admin/feedback - Get all feedback (admin only)
+router.get('/admin/feedback', adminAuthenticate, (req, res) => feedbackController.getAllFeedback(req, res));
+
+// Payment routes
+// POST /api/payment/initialize - Initialize a payment
+router.post('/payment/initialize', authenticate, (req, res) => paymentController.initialize(req, res));
+
+// POST /api/payment/verify - Verify a payment
+router.post('/payment/verify', authenticate, (req, res) => paymentController.verify(req, res));
+
+// GET /api/payment/callback - Payment callback from Paystack (public endpoint)
+router.get('/payment/callback', (req, res) => paymentController.callback(req, res));
+
+// GET /api/payment/plans - Get available payment plans
+router.get('/payment/plans', authenticate, (req, res) => paymentController.getPlans(req, res));
+
+// GET /api/payment/credits - Get user's credit balance
+router.get('/payment/credits', authenticate, (req, res) => paymentController.getCredits(req, res));
+
+// Admin routes
+// POST /api/admin/login - Admin login
+router.post('/admin/login', (req, res) => adminController.login(req, res));
+
+// GET /api/admin/stats - Get dashboard statistics
+router.get('/admin/stats', adminAuthenticate, (req, res) => adminController.getStats(req, res));
+
+// GET /api/admin/users - Get all users
+router.get('/admin/users', adminAuthenticate, (req, res) => adminController.getUsers(req, res));
+
+// GET /api/admin/users/:id - Get user details
+router.get('/admin/users/:id', adminAuthenticate, (req, res) => adminController.getUser(req, res));
+
+// PUT /api/admin/users/:id - Update user
+router.put('/admin/users/:id', adminAuthenticate, (req, res) => adminController.updateUser(req, res));
+
+// GET /api/admin/payment-plans - Get payment plans
+router.get('/admin/payment-plans', adminAuthenticate, (req, res) => adminController.getPaymentPlans(req, res));
+
+// POST /api/admin/payment-plans - Create payment plan
+router.post('/admin/payment-plans', adminAuthenticate, (req, res) => adminController.createPaymentPlan(req, res));
+
+// PUT /api/admin/payment-plans/:id - Update payment plan
+router.put('/admin/payment-plans/:id', adminAuthenticate, (req, res) => adminController.updatePaymentPlan(req, res));
+
+// DELETE /api/admin/payment-plans/:id - Delete payment plan
+router.delete('/admin/payment-plans/:id', adminAuthenticate, (req, res) => adminController.deletePaymentPlan(req, res));
 
 export default router;

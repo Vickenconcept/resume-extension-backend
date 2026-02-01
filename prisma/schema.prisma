@@ -15,13 +15,20 @@ model User {
   name           String
   email          String   @unique
   password       String
+  role           String   @default("user") // user, admin
   defaultTemplate String? @default("classic") @map("default_template") // classic, modern, compact
+  credits        Int      @default(0) // Available credits for generation
+  freeTrialUsed  Int      @default(0) @map("free_trial_used") // Number of free generations used
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   resumes Resume[]
   tokens  Token[]
+  payments Payment[]
+  usageLogs UsageLog[]
+  feedback Feedback[]
 
+  @@index([role])
   @@map("users")
 }
 
@@ -87,4 +94,68 @@ model Token {
   @@index([userId])
   @@index([token])
   @@map("tokens")
+}
+
+model Payment {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @map("user_id")
+  paystackRef     String   @unique @map("paystack_ref") // Paystack reference
+  amount          Decimal  @db.Decimal(10, 2) // Amount in USD
+  credits         Int      // Credits purchased
+  status          String   @default("pending") // pending, completed, failed
+  paystackResponse Json?   @map("paystack_response") // Full Paystack response
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([paystackRef])
+  @@index([status])
+  @@map("payments")
+}
+
+model UsageLog {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @map("user_id")
+  action          String   // 'generate' or 'regenerate'
+  creditsUsed     Int      @default(1) @map("credits_used")
+  usedFreeTrial   Boolean  @default(false) @map("used_free_trial")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("usage_logs")
+}
+
+model PaymentPlan {
+  id          Int      @id @default(autoincrement())
+  amount      Float    // Amount in USD
+  credits     Int      // Number of credits
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("payment_plans")
+}
+
+model Feedback {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  type        String   // 'resume' or 'cover_letter'
+  rating      String   // 'positive' or 'negative'
+  message     String?  @db.Text // Feedback message (required for negative feedback)
+  resumeId    String?  @map("resume_id") // Resume ID if applicable
+  versionId   Int?     @map("version_id") // Resume version ID if applicable
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([rating])
+  @@index([createdAt])
+  @@map("feedback")
 }

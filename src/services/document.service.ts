@@ -261,6 +261,325 @@ export class DocumentService {
   }
 
   /**
+   * Convert HTML to plain text while preserving structure
+   */
+  private htmlToPlainText(html: string): string {
+    // Node.js environment - simple HTML tag removal with structure preservation
+    return html
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n\n')
+      .replace(/<\/h[1-6]>/gi, '\n\n')
+      .replace(/<\/li>/gi, '\n')
+      .replace(/<li>/gi, '• ')
+      .replace(/<[^>]+>/g, '') // Remove all remaining HTML tags
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\n{3,}/g, '\n\n') // Remove excessive line breaks
+      .trim();
+  }
+
+  /**
+   * Generate DOCX from HTML content with formatting preserved
+   */
+  async generateDocxFromHtml(html: string, template: ResumeTemplate = 'classic'): Promise<Buffer> {
+    try {
+      // Parse HTML and convert to DOCX structure with formatting
+      const docxContent = this.parseHtmlToDocx(html, template);
+      
+      const doc = new Document({
+        sections: [
+          {
+            properties: {
+              page: {
+                margin: {
+                  top: 1440, // 1 inch
+                  bottom: 1440,
+                  left: 1440,
+                  right: 1440,
+                },
+              },
+            },
+            children: docxContent,
+          },
+        ],
+      });
+
+      const buffer = await Packer.toBuffer(doc);
+      return buffer;
+    } catch (error: any) {
+      logger.error('DOCX generation from HTML error:', error);
+      throw new Error('Failed to generate DOCX from HTML: ' + error.message);
+    }
+  }
+
+  /**
+   * Parse HTML and convert to DOCX Paragraph array with formatting
+   */
+  private parseHtmlToDocx(html: string, template: ResumeTemplate): Paragraph[] {
+    const paragraphs: Paragraph[] = [];
+    
+    // Extract body content if full HTML document
+    let bodyContent = html;
+    const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+    if (bodyMatch) {
+      bodyContent = bodyMatch[1];
+    }
+
+    // Split by block elements (p, h1-h6, div, br, ul, ol, li)
+    // Use regex to find all HTML elements
+    const blockRegex = /<(p|h[1-6]|div|br|ul|ol|li)[^>]*>|<\/(p|h[1-6]|div|ul|ol|li)>/gi;
+    let lastIndex = 0;
+    let match;
+    let currentParagraph: TextRun[] = [];
+    let inList = false;
+    let listItems: Paragraph[] = [];
+
+    // Process HTML content
+    while ((match = blockRegex.exec(bodyContent)) !== null) {
+      const tag = match[1] || match[2]; // Opening or closing tag
+      const beforeTag = bodyContent.substring(lastIndex, match.index);
+      
+      if (beforeTag.trim()) {
+        // Parse inline content with formatting
+        const inlineRuns = this.parseInlineHtml(beforeTag);
+        currentParagraph.push(...inlineRuns);
+      }
+
+      if (tag && tag.match(/^h[1-6]$/i)) {
+        // Header tag
+        if (currentParagraph.length > 0) {
+          paragraphs.push(new Paragraph({
+            children: currentParagraph,
+            spacing: { after: 240 },
+          }));
+          currentParagraph = [];
+        }
+        
+        // Get content until closing tag
+        const headerEnd = bodyContent.indexOf(`</${tag}>`, match.index);
+        if (headerEnd !== -1) {
+          const headerContent = bodyContent.substring(match.index + match[0].length, headerEnd);
+          const headerRuns = this.parseInlineHtml(headerContent);
+          paragraphs.push(new Paragraph({
+            children: headerRuns,
+            spacing: { before: 480, after: 120 },
+            borders: {
+              bottom: {
+                color: '000000',
+                size: 120,
+                style: 'single',
+              },
+            },
+          }));
+          lastIndex = headerEnd + `</${tag}>`.length;
+          continue;
+        }
+      } else if (tag === 'p' || tag === 'div') {
+        // Paragraph or div - flush current and start new
+        if (currentParagraph.length > 0 || inList) {
+          if (inList && listItems.length > 0) {
+            paragraphs.push(...listItems);
+            listItems = [];
+            inList = false;
+          }
+          if (currentParagraph.length > 0) {
+            paragraphs.push(new Paragraph({
+              children: currentParagraph,
+              spacing: { after: 240 },
+            }));
+            currentParagraph = [];
+          }
+        }
+      } else if (tag === 'br') {
+        // Line break - add to current paragraph
+        if (currentParagraph.length > 0) {
+          currentParagraph.push(new TextRun({ text: '\n', break: 1 }));
+        }
+      } else if (tag === 'ul' || tag === 'ol') {
+        // List start
+        if (currentParagraph.length > 0) {
+          paragraphs.push(new Paragraph({
+            children: currentParagraph,
+            spacing: { after: 240 },
+          }));
+          currentParagraph = [];
+        }
+        inList = true;
+      } else if (tag === 'li') {
+        // List item
+        const liEnd = bodyContent.indexOf('</li>', match.index);
+        if (liEnd !== -1) {
+          const liContent = bodyContent.substring(match.index + match[0].length, liEnd);
+          const liRuns = this.parseInlineHtml(liContent);
+          listItems.push(new Paragraph({
+            children: [
+              new TextRun({ text: '• ', bold: true }),
+              ...liRuns,
+            ],
+            spacing: { after: 120 },
+            indent: { left: 360 }, // 0.25 inch
+          }));
+          lastIndex = liEnd + '</li>'.length;
+          continue;
+        }
+      }
+
+      lastIndex = match.index + match[0].length;
+    }
+
+    // Handle remaining content
+    if (lastIndex < bodyContent.length) {
+      const remaining = bodyContent.substring(lastIndex);
+      if (remaining.trim()) {
+        const remainingRuns = this.parseInlineHtml(remaining);
+        currentParagraph.push(...remainingRuns);
+      }
+    }
+
+    // Flush remaining content
+    if (inList && listItems.length > 0) {
+      paragraphs.push(...listItems);
+    }
+    if (currentParagraph.length > 0) {
+      paragraphs.push(new Paragraph({
+        children: currentParagraph,
+        spacing: { after: 240 },
+      }));
+    }
+
+    return paragraphs.length > 0 ? paragraphs : [new Paragraph({ text: '' })];
+  }
+
+  /**
+   * Parse inline HTML content and return TextRun array with formatting
+   * Handles nested tags like <b><i>text</i></b>
+   */
+  private parseInlineHtml(html: string): TextRun[] {
+    const runs: TextRun[] = [];
+    if (!html || !html.trim()) return runs;
+
+    // Remove all HTML tags and get plain text as fallback
+    const plainText = this.unescapeHtml(html.replace(/<[^>]+>/g, ''));
+    if (!plainText.trim()) return runs;
+
+    // Stack-based approach to handle nested formatting
+    const formatStack: Array<'bold' | 'italics' | 'underline'> = [];
+    let currentText = '';
+    let i = 0;
+
+    while (i < html.length) {
+      if (html[i] === '<') {
+        // Process any accumulated text before the tag
+        if (currentText) {
+          if (currentText.trim()) {
+            runs.push(this.createTextRun(currentText, formatStack));
+          }
+          currentText = '';
+        }
+
+        // Find the closing >
+        const tagEnd = html.indexOf('>', i);
+        if (tagEnd === -1) break;
+
+        const tagContent = html.substring(i + 1, tagEnd);
+        const isClosing = tagContent.startsWith('/');
+        const tagName = isClosing 
+          ? tagContent.substring(1).toLowerCase().split(/\s/)[0]
+          : tagContent.toLowerCase().split(/\s/)[0];
+
+        // Handle formatting tags
+        if (tagName === 'b' || tagName === 'strong') {
+          if (isClosing) {
+            const index = formatStack.indexOf('bold');
+            if (index > -1) formatStack.splice(index, 1);
+          } else {
+            formatStack.push('bold');
+          }
+        } else if (tagName === 'i' || tagName === 'em') {
+          if (isClosing) {
+            const index = formatStack.indexOf('italics');
+            if (index > -1) formatStack.splice(index, 1);
+          } else {
+            formatStack.push('italics');
+          }
+        } else if (tagName === 'u') {
+          if (isClosing) {
+            const index = formatStack.indexOf('underline');
+            if (index > -1) formatStack.splice(index, 1);
+          } else {
+            formatStack.push('underline');
+          }
+        }
+
+        i = tagEnd + 1;
+      } else {
+        currentText += html[i];
+        i++;
+      }
+    }
+
+    // Process any remaining text
+    if (currentText) {
+      const text = this.unescapeHtml(currentText);
+      if (text.trim()) {
+        runs.push(this.createTextRun(text, formatStack));
+      }
+    }
+
+    // If no runs created (no formatting), create a plain text run
+    if (runs.length === 0 && plainText.trim()) {
+      runs.push(new TextRun({
+        text: plainText,
+        size: 22,
+        color: '000000',
+      }));
+    }
+
+    return runs.length > 0 ? runs : [];
+  }
+
+  /**
+   * Create a TextRun with the specified formatting
+   */
+  private createTextRun(text: string, formatStack: Array<'bold' | 'italics' | 'underline'>): TextRun {
+    const props: any = {
+      text: text,
+      size: 22, // 11pt
+      color: '000000',
+    };
+
+    if (formatStack.includes('bold')) {
+      props.bold = true;
+    }
+    if (formatStack.includes('italics')) {
+      props.italics = true;
+    }
+    if (formatStack.includes('underline')) {
+      props.underline = { type: 'single' };
+    }
+
+    return new TextRun(props);
+  }
+
+  /**
+   * Unescape HTML entities
+   */
+  private unescapeHtml(text: string): string {
+    return text
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&apos;/g, "'");
+  }
+
+  /**
    * Generate DOCX from plain text
    */
   async generateDocxFromText(text: string, template: ResumeTemplate = 'classic'): Promise<Buffer> {
@@ -1116,6 +1435,35 @@ export class DocumentService {
 </head>
 <body>
 ${htmlParts.join('\n')}
+</body>
+</html>`;
+  }
+
+  /**
+   * Build HTML from existing HTML content (wrap with template styles)
+   */
+  buildHtmlFromHtml(html: string, template: ResumeTemplate = 'classic'): string {
+    // Extract body content if full HTML document
+    let bodyContent = html;
+    const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+    if (bodyMatch) {
+      bodyContent = bodyMatch[1];
+    } else {
+      // If no body tag, assume it's just the content
+      bodyContent = html;
+    }
+
+    const templateStyles = this.getTemplateStyles(template);
+    return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        ${templateStyles}
+    </style>
+</head>
+<body>
+${bodyContent}
 </body>
 </html>`;
   }

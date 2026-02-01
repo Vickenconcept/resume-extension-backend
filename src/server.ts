@@ -13,21 +13,31 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors({
-  origin: [
+const allowedOrigins = [
+  // Production domains (update with your actual domains)
+  process.env.FRONTEND_URL,
+  process.env.ADMIN_DASHBOARD_URL,
+  // Chrome extensions
+  /^chrome-extension:\/\/.*$/,
+  // Development (only in development mode)
+  ...(process.env.NODE_ENV !== 'production' ? [
     'http://localhost:3000',
+    'http://localhost:3002',
     'http://localhost:5173',
     'http://localhost:8000',
-    /^chrome-extension:\/\/.*$/,
     /^https:\/\/.*\.ngrok-free\.(app|dev|io)$/,
     /^https:\/\/.*\.ngrok\.io$/,
     /^https:\/\/.*\.ngrok/,
-  ],
+  ] : []),
+].filter(Boolean); // Remove undefined values
+
+app.use(cors({
+  origin: allowedOrigins.length > 0 ? allowedOrigins : true, // Fallback to allow all in development
   credentials: true,
   allowedHeaders: [
     'Content-Type',
     'Authorization',
-    'ngrok-skip-browser-warning',
+    'ngrok-skip-browser-warning', // Keep for development
     'Accept',
     'X-Requested-With',
   ],

@@ -39,14 +39,14 @@ export class QualityService {
       enableSemanticATS === undefined || enableSemanticATS === 'true';
 
     if (this.useSemanticATS) {
-      try {
-        this.semanticATSService = new SemanticATSService();
-      } catch (error) {
+    try {
+      this.semanticATSService = new SemanticATSService();
+    } catch (error) {
         logger.warn(
           'Semantic ATS Service not available, using fallback',
           error,
         );
-        this.semanticATSService = null; // Will use fallback methods if service unavailable
+      this.semanticATSService = null; // Will use fallback methods if service unavailable
       }
     } else {
       logger.info(

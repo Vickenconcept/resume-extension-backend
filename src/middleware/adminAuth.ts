@@ -2,18 +2,20 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import { ApiResponseFormatter } from '../utils/response';
-import { JwtPayload } from '../types';
 
 const prisma = new PrismaClient();
 
-export const authenticate = async (
+/**
+ * Admin authentication middleware - verifies JWT without requiring token in database
+ * This is used for admin login tokens which are not stored in the Token table
+ */
+export const adminAuthenticate = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '') || 
-                  req.cookies?.token;
+    const token = req.headers.authorization?.replace('Bearer ', '');
 
     if (!token) {
       ApiResponseFormatter.error(res, 'Authentication required', 401);
@@ -25,17 +27,7 @@ export const authenticate = async (
       throw new Error('JWT_SECRET is not configured');
     }
 
-    const decoded = jwt.verify(token, jwtSecret) as JwtPayload;
-
-    // Verify token exists in database (optional - for token revocation)
-    const tokenRecord = await prisma.token.findUnique({
-      where: { token },
-    });
-
-    if (!tokenRecord || tokenRecord.expiresAt < new Date()) {
-      ApiResponseFormatter.error(res, 'Token expired or invalid', 401);
-      return;
-    }
+    const decoded = jwt.verify(token, jwtSecret) as any;
 
     // Get user
     const user = await prisma.user.findUnique({
@@ -50,6 +42,12 @@ export const authenticate = async (
 
     if (!user) {
       ApiResponseFormatter.error(res, 'User not found', 401);
+      return;
+    }
+
+    // Check if user is admin
+    if (user.role !== 'admin') {
+      ApiResponseFormatter.error(res, 'Admin access required', 403);
       return;
     }
 

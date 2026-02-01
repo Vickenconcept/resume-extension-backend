@@ -31,6 +31,88 @@ export class ResumeController {
     }
   }
 
+  /**
+   * Check and deduct credits for generation/regeneration
+   * Returns true if user has credits, false otherwise
+   */
+  private async checkAndDeductCredits(userId: number, action: 'generate' | 'regenerate'): Promise<{ hasCredits: boolean; usedFreeTrial: boolean; message?: string }> {
+    try {
+      const freeTrialLimit = parseInt(process.env.FREE_TRIAL_LIMIT || '3', 10);
+      
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          credits: true,
+          freeTrialUsed: true,
+        },
+      });
+
+      if (!user) {
+        return { hasCredits: false, usedFreeTrial: false, message: 'User not found' };
+      }
+
+      // Check if user can use free trial
+      if (user.freeTrialUsed < freeTrialLimit) {
+        // Use free trial
+        await prisma.user.update({
+          where: { id: userId },
+          data: {
+            freeTrialUsed: {
+              increment: 1,
+            },
+          },
+        });
+
+        // Log usage
+        await prisma.usageLog.create({
+          data: {
+            userId,
+            action,
+            creditsUsed: 0,
+            usedFreeTrial: true,
+          },
+        });
+
+        return { hasCredits: true, usedFreeTrial: true };
+      }
+
+      // Check if user has paid credits
+      if (user.credits > 0) {
+        // Deduct credit
+        await prisma.user.update({
+          where: { id: userId },
+          data: {
+            credits: {
+              decrement: 1,
+            },
+          },
+        });
+
+        // Log usage
+        await prisma.usageLog.create({
+          data: {
+            userId,
+            action,
+            creditsUsed: 1,
+            usedFreeTrial: false,
+          },
+        });
+
+        return { hasCredits: true, usedFreeTrial: false };
+      }
+
+      // No credits available
+      return {
+        hasCredits: false,
+        usedFreeTrial: false,
+        message: `You have no credits remaining. Free trial: ${user.freeTrialUsed}/${freeTrialLimit} used. Please purchase credits to continue.`,
+      };
+    } catch (error: any) {
+      logger.error('Check and deduct credits error:', error);
+      return { hasCredits: false, usedFreeTrial: false, message: 'Failed to check credits' };
+    }
+  }
+
   async upload(req: Request, res: Response): Promise<void> {
     try {
       if (!req.file) {
@@ -139,6 +221,14 @@ export class ResumeController {
       }
 
       const user = req.user;
+
+      // Check and deduct credits
+      const creditCheck = await this.checkAndDeductCredits(user.id, 'generate');
+      if (!creditCheck.hasCredits) {
+        ApiResponseFormatter.error(res, creditCheck.message || 'No credits available', 402);
+        return;
+      }
+
       const generateFreelyMode = generateFreely === true || generateFreely === 'true';
       const isCustomMode = customMode === true || customMode === 'true';
       const userInstructions = (customInstructions && typeof customInstructions === 'string') ? customInstructions.trim() : '';
@@ -373,6 +463,14 @@ export class ResumeController {
       }
 
       const user = req.user;
+
+      // Check and deduct credits
+      const creditCheck = await this.checkAndDeductCredits(user.id, 'regenerate');
+      if (!creditCheck.hasCredits) {
+        ApiResponseFormatter.error(res, creditCheck.message || 'No credits available', 402);
+        return;
+      }
+
       const generateFreelyMode = generateFreely === true || generateFreely === 'true';
       const isCustomMode = customMode === true || customMode === 'true';
       const userInstructions = (customInstructions && typeof customInstructions === 'string') ? customInstructions.trim() : '';
@@ -1163,12 +1261,31 @@ export class ResumeController {
       // Get user's template preference
       const template = await this.getUserTemplate(user.id);
       
+      // Check if content is HTML (contains HTML tags)
+      const isHTML = /<[a-z][\s\S]*>/i.test(resumeText);
+      logger.info('Content type detection', {
+        isHTML,
+        contentPreview: resumeText.substring(0, 200),
+        contentLength: resumeText.length,
+      });
+      
       let fileContent: Buffer;
       if (downloadFormat === 'docx') {
+        if (isHTML) {
+          // Use HTML content directly
+          fileContent = await documentService.generateDocxFromHtml(resumeText, template);
+        } else {
         fileContent = await documentService.generateDocxFromText(resumeText, template);
+        }
       } else {
         try {
+          if (isHTML) {
+            // Convert HTML to formatted HTML with template styles, then generate PDF
+            const htmlWithStyles = documentService.buildHtmlFromHtml(resumeText, template);
+            fileContent = await documentService.generatePdfFromHtml(htmlWithStyles);
+          } else {
           fileContent = await documentService.generatePdfFromText(resumeText, template);
+          }
         } catch (pdfError: any) {
           logger.warn('PDF generation failed, falling back to DOCX:', pdfError);
           fileContent = await documentService.generateDocxFromText(resumeText, template);

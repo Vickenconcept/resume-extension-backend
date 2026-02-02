@@ -859,6 +859,8 @@ export class DocumentService {
           '--disable-dev-shm-usage',
           '--disable-gpu',
           '--disable-software-rasterizer',
+          '--no-zygote',
+          '--single-process',
         ],
       };
 

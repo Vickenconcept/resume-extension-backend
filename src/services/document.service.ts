@@ -864,11 +864,29 @@ export class DocumentService {
         ],
       };
 
+      // Use found executable path, or try common system paths, or let Puppeteer use bundled Chromium
       if (executablePath) {
         launchOptions.executablePath = executablePath;
         logger.info('Using Chrome executable:', executablePath);
       } else {
-        logger.warn('No Chrome executable found, trying default Puppeteer browser');
+        // Try common system paths
+        const systemPaths = [
+          '/usr/bin/chromium-browser',
+          '/usr/bin/chromium',
+          '/snap/bin/chromium',
+        ];
+        
+        for (const path of systemPaths) {
+          if (fs.existsSync(path)) {
+            launchOptions.executablePath = path;
+            logger.info('Using system Chrome executable:', path);
+            break;
+          }
+        }
+        
+        if (!launchOptions.executablePath) {
+          logger.warn('No Chrome executable found, using Puppeteer bundled Chromium');
+        }
       }
 
       const browser = await puppeteer.launch(launchOptions);
@@ -888,7 +906,23 @@ export class DocumentService {
           },
         });
 
-        return Buffer.from(pdf);
+        // Ensure pdf is a Buffer (Puppeteer returns Buffer by default, but verify)
+        const pdfBuffer = Buffer.isBuffer(pdf) ? pdf : Buffer.from(pdf);
+        
+        // Verify PDF buffer is valid (PDF files start with %PDF)
+        if (pdfBuffer.length > 0 && pdfBuffer[0] !== 0x25 && pdfBuffer[1] !== 0x50) {
+          logger.warn('Generated PDF buffer does not start with PDF header', {
+            firstBytes: pdfBuffer.slice(0, 10).toString('hex'),
+            length: pdfBuffer.length
+          });
+        }
+        
+        logger.info('PDF generated successfully', {
+          size: pdfBuffer.length,
+          firstBytes: pdfBuffer.slice(0, 5).toString('hex')
+        });
+        
+        return pdfBuffer;
       } finally {
         await browser.close();
       }

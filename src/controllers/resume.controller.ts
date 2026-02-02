@@ -1250,10 +1250,18 @@ export class ResumeController {
             ? 'application/pdf'
             : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
+        // Ensure fileContent is a Buffer
+        if (!Buffer.isBuffer(fileContent)) {
+          logger.error('File content from Cloudinary is not a Buffer', { type: typeof fileContent });
+          throw new Error('Invalid file content type');
+        }
+
         res.setHeader('Content-Type', contentType);
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.setHeader('Content-Length', fileContent.length.toString());
-        res.send(fileContent);
+        
+        // Use res.end() for binary data to avoid any JSON middleware interference
+        res.end(fileContent);
         return;
       }
       
@@ -1292,10 +1300,19 @@ export class ResumeController {
           // Change format to docx if PDF fails
           const filename = `tailored-resume-${new Date().toISOString().split('T')[0]}.docx`;
           const contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+          
+          // Ensure fileContent is a Buffer
+          if (!Buffer.isBuffer(fileContent)) {
+            logger.error('DOCX fallback content is not a Buffer', { type: typeof fileContent });
+            throw new Error('Invalid file content type');
+          }
+          
           res.setHeader('Content-Type', contentType);
           res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
           res.setHeader('Content-Length', fileContent.length.toString());
-          res.send(fileContent);
+          
+          // Use res.end() for binary data to avoid any JSON middleware interference
+          res.end(fileContent);
           return;
         }
       }
@@ -1371,10 +1388,19 @@ export class ResumeController {
           ? 'application/pdf'
           : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
+      // Ensure fileContent is a Buffer
+      if (!Buffer.isBuffer(fileContent)) {
+        logger.error('File content is not a Buffer', { type: typeof fileContent });
+        throw new Error('Invalid file content type');
+      }
+
+      // Set headers and send binary data
       res.setHeader('Content-Type', contentType);
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.setHeader('Content-Length', fileContent.length.toString());
-      res.send(fileContent);
+      
+      // Use res.end() for binary data to avoid any JSON middleware interference
+      res.end(fileContent);
     } catch (error: any) {
       logger.error('Resume download error:', error);
       ApiResponseFormatter.error(res, 'Failed to download resume: ' + error.message, 500);

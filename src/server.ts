@@ -18,6 +18,7 @@ const allowedOrigins: (string | RegExp)[] = [
   'http://localhost:3002', // Admin dashboard
   'http://localhost:5173',
   'http://localhost:8000',
+  'https://onpagecv.on-forge.com', // Production backend
   /^chrome-extension:\/\/.*$/,
   /^https:\/\/.*\.ngrok-free\.(app|dev|io)$/,
   /^https:\/\/.*\.ngrok\.io$/,

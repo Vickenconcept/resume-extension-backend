@@ -17,9 +17,9 @@ const allowedOrigins: (string | RegExp)[] = [
   'http://localhost:3000',
   'http://localhost:3002', // Admin dashboard
   'http://localhost:5173',
-  'https://resume.phanrise.com',
   'http://localhost:8000',
   'https://onpagecv.on-forge.com', // Production backend
+  'https://resume.phanrise.com', // Vercel custom domain
   /^chrome-extension:\/\/.*$/,
   /^https:\/\/.*\.ngrok-free\.(app|dev|io)$/,
   /^https:\/\/.*\.ngrok\.io$/,

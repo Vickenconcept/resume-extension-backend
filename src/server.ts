@@ -20,6 +20,7 @@ const allowedOrigins: (string | RegExp)[] = [
   'http://localhost:8000',
   'https://onpagecv.on-forge.com', // Production backend
   'https://resume.phanrise.com', // Vercel custom domain
+  'https://resume.phanrise.com', // Vercel custom domain
   /^chrome-extension:\/\/.*$/,
   /^https:\/\/.*\.ngrok-free\.(app|dev|io)$/,
   /^https:\/\/.*\.ngrok\.io$/,

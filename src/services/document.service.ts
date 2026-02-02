@@ -848,9 +848,6 @@ export class DocumentService {
 
   async generatePdfFromHtml(html: string): Promise<Buffer> {
     try {
-      // Try to find Chrome/Chromium executable
-      const executablePath = await this.findChromeExecutable();
-      
       const launchOptions: any = {
         headless: true,
         args: [
@@ -864,29 +861,19 @@ export class DocumentService {
         ],
       };
 
-      // Use found executable path, or try common system paths, or let Puppeteer use bundled Chromium
-      if (executablePath) {
-        launchOptions.executablePath = executablePath;
-        logger.info('Using Chrome executable:', executablePath);
+      // Only use system Chromium if explicitly set via environment variable
+      // Otherwise, use Puppeteer's bundled Chromium (more reliable)
+      if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        const envPath = process.env.PUPPETEER_EXECUTABLE_PATH.trim();
+        if (fs.existsSync(envPath)) {
+          launchOptions.executablePath = envPath;
+          logger.info('Using Chrome executable from PUPPETEER_EXECUTABLE_PATH:', envPath);
+        } else {
+          logger.warn('PUPPETEER_EXECUTABLE_PATH set but file not found, using bundled Chromium:', envPath);
+        }
       } else {
-        // Try common system paths
-        const systemPaths = [
-          '/usr/bin/chromium-browser',
-          '/usr/bin/chromium',
-          '/snap/bin/chromium',
-        ];
-        
-        for (const path of systemPaths) {
-          if (fs.existsSync(path)) {
-            launchOptions.executablePath = path;
-            logger.info('Using system Chrome executable:', path);
-            break;
-          }
-        }
-        
-        if (!launchOptions.executablePath) {
-          logger.warn('No Chrome executable found, using Puppeteer bundled Chromium');
-        }
+        // Use Puppeteer's bundled Chromium (default and most reliable)
+        logger.info('Using Puppeteer bundled Chromium (no PUPPETEER_EXECUTABLE_PATH set)');
       }
 
       const browser = await puppeteer.launch(launchOptions);

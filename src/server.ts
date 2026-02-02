@@ -23,6 +23,7 @@ const allowedOrigins: (string | RegExp)[] = [
   /^https:\/\/.*\.ngrok-free\.(app|dev|io)$/,
   /^https:\/\/.*\.ngrok\.io$/,
   /^https:\/\/.*\.ngrok/,
+  /^https:\/\/.*\.vercel\.app$/, // Vercel deployments
 ];
 
 app.use(cors({

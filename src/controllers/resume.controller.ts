@@ -1256,6 +1256,7 @@ export class ResumeController {
           throw new Error('Invalid file content type');
         }
 
+        res.status(200);
         res.setHeader('Content-Type', contentType);
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.setHeader('Content-Length', fileContent.length.toString());
@@ -1307,6 +1308,7 @@ export class ResumeController {
             throw new Error('Invalid file content type');
           }
           
+          res.status(200);
           res.setHeader('Content-Type', contentType);
           res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
           res.setHeader('Content-Length', fileContent.length.toString());
@@ -1395,6 +1397,7 @@ export class ResumeController {
       }
 
       // Set headers and send binary data
+      res.status(200);
       res.setHeader('Content-Type', contentType);
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.setHeader('Content-Length', fileContent.length.toString());

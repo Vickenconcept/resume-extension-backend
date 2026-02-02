@@ -65,6 +65,7 @@ export class QualityService {
     jobDescription: string,
     generateFreely: boolean
   ): QualityScore {
+    // Warnings removed - not generating warnings to reduce processing time and avoid incorrect warnings
     const warnings: string[] = [];
     const flags = {
       hasHallucination: false,
@@ -75,18 +76,6 @@ export class QualityService {
     // Use high-impact keywords only (ignore noise words)
     const jobKeywords = this.extractHighImpactKeywords(jobDescription);
     const tailoredKeywords = this.extractHighImpactKeywords(tailoredContent);
-
-    // Check for potential hallucination (only in strict mode)
-    if (!generateFreely) {
-      const hallucinationCheck = this.checkHallucination(
-        originalResume,
-        tailoredContent
-      );
-      if (hallucinationCheck.hasIssues) {
-        flags.hasHallucination = true;
-        warnings.push(...hallucinationCheck.warnings);
-      }
-    }
 
     // Check keyword coverage - only high-impact keywords
     const missingKeywords = jobKeywords.filter(
@@ -293,35 +282,15 @@ export class QualityService {
       return true;
     });
 
-    // Only show warnings for truly critical missing keywords when the match score is low
-    // and we are in strict mode. If keywordMatch is already high (95%+), don't show warnings
-    // as the match is excellent. Also, if there are very few critical missing keywords (1-2),
-    // they're likely noise, so ignore them.
-    // Only show if: strict mode AND match < 80% AND more than 2 critical missing
-    if (!generateFreely && keywordMatch < 80 && criticalMissing.length > 2) {
-      flags.hasMissingKeywords = true;
-      const topMissing = criticalMissing.slice(0, 5);
-      if (topMissing.length <= 3) {
-        warnings.push(
-          `Missing ${topMissing.length} critical keyword${topMissing.length > 1 ? 's' : ''}: ${topMissing.join(', ')}`
-        );
-      } else {
-        warnings.push(
-          `Missing ${topMissing.length} critical keywords: ${topMissing
-            .slice(0, 3)
-            .join(', ')}, and ${topMissing.length - 3} more`
-        );
-      }
-    }
-
-    // Check completeness
+    // Warnings removed - not generating warnings to reduce processing time and avoid incorrect warnings
+    // Check completeness (for score calculation only, no warnings)
     const completenessCheck = this.checkCompleteness(
       originalResume,
       tailoredContent
     );
     if (completenessCheck.hasIssues) {
       flags.hasIncompleteSections = true;
-      warnings.push(...completenessCheck.warnings);
+      // No warnings pushed - warnings feature removed
     }
 
     // Calculate scores

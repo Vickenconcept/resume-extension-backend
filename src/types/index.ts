@@ -22,8 +22,14 @@ export interface Resume {
   cloudinaryUrl: string;
   cloudinaryPublicId: string;
   parsedContent?: any;
+  tailoredDocxUrl?: string;
+  tailoredPdfUrl?: string;
   tailoredResumeText?: string;
   coverLetter?: string;
+  downloadUrls?: {
+    docx?: string;
+    pdf?: string;
+  };
   createdAt: Date;
   updatedAt: Date;
 }

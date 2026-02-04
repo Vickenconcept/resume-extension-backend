@@ -331,133 +331,126 @@ export class ResumeController {
         (qualityScore as any).overall = Math.round(truth * 0.4 + comp * 0.3 + kw * 0.3);
       }
 
-      const shouldGenerateFiles = process.env.EAGER_FILE_GENERATION === 'true';
+      // Generate documents
       const docGenStartTime = Date.now();
-      let docGenTime = docGenStartTime;
-      let docxUrl: string | null = null;
+      logger.info('Generating tailored resume documents...');
+
+      // Get user's template preference
+      const templateStartTime = Date.now();
+      const template = await this.getUserTemplate(user.id);
+      const templateTime = Date.now();
+      logger.info('Template lookup completed', {
+        duration_ms: templateTime - templateStartTime,
+        total_elapsed_ms: templateTime - startTime,
+      });
+
+      let docxContent: Buffer;
+      let pdfContent: Buffer | null = null;
       let pdfUrl: string | null = null;
-      const downloadUrls: any = {};
 
-      if (shouldGenerateFiles) {
-        logger.info('Generating tailored resume documents...');
+      // Prefer full text over structured data (full text contains ALL content)
+      // Use structured data only if full text is not available
+      const resumeText = fullTailoredResume || resumeContent.raw_text || '';
 
-        // Get user's template preference
-        const templateStartTime = Date.now();
-        const template = await this.getUserTemplate(user.id);
-        const templateTime = Date.now();
-        logger.info('Template lookup completed', {
-          duration_ms: templateTime - templateStartTime,
-          total_elapsed_ms: templateTime - startTime,
+      if (resumeText && resumeText.trim().length > 0) {
+        const docxStartTime = Date.now();
+        // Use text-based generation (preserves ALL content including PROJECT HIGHLIGHTS, LANGUAGE, etc.)
+        logger.info('Using text-based generation from fullTailoredResume');
+        docxContent = await documentService.generateDocxFromText(resumeText, template);
+        const docxTime = Date.now();
+        logger.info('DOCX generation completed', {
+          duration_ms: docxTime - docxStartTime,
+          total_elapsed_ms: docxTime - startTime,
         });
-
-        let docxContent: Buffer;
-        let pdfContent: Buffer | null = null;
-
-        // Prefer full text over structured data (full text contains ALL content)
-        // Use structured data only if full text is not available
-        const resumeText = fullTailoredResume || resumeContent.raw_text || '';
-
-        if (resumeText && resumeText.trim().length > 0) {
-          const docxStartTime = Date.now();
-          // Use text-based generation (preserves ALL content including PROJECT HIGHLIGHTS, LANGUAGE, etc.)
-          logger.info('Using text-based generation from fullTailoredResume');
-          docxContent = await documentService.generateDocxFromText(resumeText, template);
-          const docxTime = Date.now();
-          logger.info('DOCX generation completed', {
-            duration_ms: docxTime - docxStartTime,
-            total_elapsed_ms: docxTime - startTime,
+        
+        // Try to generate PDF (optional - may fail if Chromium not available)
+        try {
+          const pdfStartTime = Date.now();
+          pdfContent = await documentService.generatePdfFromText(resumeText, template);
+          const pdfTime = Date.now();
+          logger.info('PDF generation completed', {
+            duration_ms: pdfTime - pdfStartTime,
+            total_elapsed_ms: pdfTime - startTime,
           });
-          
-          // Try to generate PDF (optional - may fail if Chromium not available)
-          try {
-            const pdfStartTime = Date.now();
-            pdfContent = await documentService.generatePdfFromText(resumeText, template);
-            const pdfTime = Date.now();
-            logger.info('PDF generation completed', {
-              duration_ms: pdfTime - pdfStartTime,
-              total_elapsed_ms: pdfTime - startTime,
-            });
-          } catch (pdfError: any) {
-            logger.warn('PDF generation failed (continuing with DOCX only):', {
-              error: pdfError?.message || String(pdfError),
-            });
-            pdfContent = null;
-          }
-        } else if (structuredData) {
-          const docxStartTime = Date.now();
-          // Fallback to structured data if no text available
-          logger.warn('Using structured data generation - full text not available');
-          docxContent = await documentService.generateDocxFromStructured(structuredData, template);
-          const docxTime = Date.now();
-          logger.info('DOCX generation completed', {
-            duration_ms: docxTime - docxStartTime,
-            total_elapsed_ms: docxTime - startTime,
+        } catch (pdfError: any) {
+          logger.warn('PDF generation failed (continuing with DOCX only):', {
+            error: pdfError?.message || String(pdfError),
           });
-          
-          try {
-            const pdfStartTime = Date.now();
-            pdfContent = await documentService.generatePdfFromStructured(structuredData, template);
-            const pdfTime = Date.now();
-            logger.info('PDF generation completed', {
-              duration_ms: pdfTime - pdfStartTime,
-              total_elapsed_ms: pdfTime - startTime,
-            });
-          } catch (pdfError: any) {
-            logger.warn('PDF generation failed (continuing with DOCX only):', {
-              error: pdfError?.message || String(pdfError),
-            });
-            pdfContent = null;
-          }
-        } else {
-          throw new Error('No resume content available for document generation');
+          pdfContent = null;
         }
-
-        // Upload DOCX to Cloudinary
-        const timestamp = Date.now();
-        const docxUploadStartTime = Date.now();
-        docxUrl = await fileUploadService.uploadFileContent(
-          docxContent,
-          'tailored-resumes',
-          `tailored_${resumeId}_${timestamp}.docx`,
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        );
-        const docxUploadTime = Date.now();
-        logger.info('DOCX upload completed', {
-          duration_ms: docxUploadTime - docxUploadStartTime,
-          total_elapsed_ms: docxUploadTime - startTime,
+      } else if (structuredData) {
+        const docxStartTime = Date.now();
+        // Fallback to structured data if no text available
+        logger.warn('Using structured data generation - full text not available');
+        docxContent = await documentService.generateDocxFromStructured(structuredData, template);
+        const docxTime = Date.now();
+        logger.info('DOCX generation completed', {
+          duration_ms: docxTime - docxStartTime,
+          total_elapsed_ms: docxTime - startTime,
         });
-
-        // Upload PDF to Cloudinary (if generated)
-        if (pdfContent) {
-          try {
-            const pdfUploadStartTime = Date.now();
-            pdfUrl = await fileUploadService.uploadFileContent(
-              pdfContent,
-              'tailored-resumes',
-              `tailored_${resumeId}_${timestamp}.pdf`,
-              'application/pdf'
-            );
-            const pdfUploadTime = Date.now();
-            logger.info('PDF upload completed', {
-              duration_ms: pdfUploadTime - pdfUploadStartTime,
-              total_elapsed_ms: pdfUploadTime - startTime,
-            });
-          } catch (uploadError: any) {
-            logger.warn('PDF upload failed:', {
-              error: uploadError?.message || String(uploadError),
-            });
-            pdfUrl = null;
-          }
-        }
-
-        downloadUrls.docx = docxUrl;
-        if (pdfUrl) {
-          downloadUrls.pdf = pdfUrl;
+        
+        try {
+          const pdfStartTime = Date.now();
+          pdfContent = await documentService.generatePdfFromStructured(structuredData, template);
+          const pdfTime = Date.now();
+          logger.info('PDF generation completed', {
+            duration_ms: pdfTime - pdfStartTime,
+            total_elapsed_ms: pdfTime - startTime,
+          });
+        } catch (pdfError: any) {
+          logger.warn('PDF generation failed (continuing with DOCX only):', {
+            error: pdfError?.message || String(pdfError),
+          });
+          pdfContent = null;
         }
       } else {
-        logger.info('Skipping document generation; will generate on download', {
-          reason: 'EAGER_FILE_GENERATION is disabled',
-        });
+        throw new Error('No resume content available for document generation');
+      }
+
+      // Upload DOCX to Cloudinary
+      const timestamp = Date.now();
+      const docxUploadStartTime = Date.now();
+      const docxUrl = await fileUploadService.uploadFileContent(
+        docxContent,
+        'tailored-resumes',
+        `tailored_${resumeId}_${timestamp}.docx`,
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      );
+      const docxUploadTime = Date.now();
+      logger.info('DOCX upload completed', {
+        duration_ms: docxUploadTime - docxUploadStartTime,
+        total_elapsed_ms: docxUploadTime - startTime,
+      });
+
+      // Upload PDF to Cloudinary (if generated)
+      if (pdfContent) {
+        try {
+          const pdfUploadStartTime = Date.now();
+          pdfUrl = await fileUploadService.uploadFileContent(
+            pdfContent,
+            'tailored-resumes',
+            `tailored_${resumeId}_${timestamp}.pdf`,
+            'application/pdf'
+          );
+          const pdfUploadTime = Date.now();
+          logger.info('PDF upload completed', {
+            duration_ms: pdfUploadTime - pdfUploadStartTime,
+            total_elapsed_ms: pdfUploadTime - startTime,
+          });
+        } catch (uploadError: any) {
+          logger.warn('PDF upload failed:', {
+            error: uploadError?.message || String(uploadError),
+          });
+          pdfUrl = null;
+        }
+      }
+
+      // Save URLs to database
+      const downloadUrls: any = {
+        docx: docxUrl,
+      };
+      if (pdfUrl) {
+        downloadUrls.pdf = pdfUrl;
       }
 
       // Prepare update data - use type assertion to bypass TypeScript errors
@@ -483,7 +476,7 @@ export class ResumeController {
         total_elapsed_ms: dbUpdateTime - startTime,
       });
 
-      docGenTime = Date.now();
+      const docGenTime = Date.now();
       const totalTime = Date.now();
 
       logger.info('Resume tailoring completed', {
@@ -763,77 +756,70 @@ export class ResumeController {
         }
       }
 
-      const shouldGenerateFiles = process.env.EAGER_FILE_GENERATION === 'true';
+      // Generate documents
       const docGenStartTime = Date.now();
-      let docGenTime = docGenStartTime;
-      let docxUrl: string | null = null;
-      let pdfUrl: string | null = null;
-      const downloadUrls: any = {};
+      // Get user's template preference
+      const template = await this.getUserTemplate(user.id);
+      
+      let docxContent: Buffer;
+      let pdfContent: Buffer | null = null;
 
-      if (shouldGenerateFiles) {
-        // Get user's template preference
-        const template = await this.getUserTemplate(user.id);
-        
-        let docxContent: Buffer;
-        let pdfContent: Buffer | null = null;
-
-        if (structuredData) {
-          docxContent = await documentService.generateDocxFromStructured(structuredData, template);
-          try {
-            pdfContent = await documentService.generatePdfFromStructured(structuredData, template);
-          } catch (pdfError: any) {
-            logger.warn('PDF generation failed (continuing with DOCX only):', {
-              error: pdfError?.message || String(pdfError),
-            });
-            pdfContent = null;
-          }
-        } else {
-          const resumeText = fullTailoredResume;
-          docxContent = await documentService.generateDocxFromText(resumeText, template);
-          try {
-            pdfContent = await documentService.generatePdfFromText(resumeText, template);
-          } catch (pdfError: any) {
-            logger.warn('PDF generation failed (continuing with DOCX only):', {
-              error: pdfError?.message || String(pdfError),
-            });
-            pdfContent = null;
-          }
-        }
-
-        // Upload DOCX to Cloudinary
-        const timestamp = Date.now();
-        docxUrl = await fileUploadService.uploadFileContent(
-          docxContent,
-          'tailored-resumes',
-          `tailored_${resumeId}_${timestamp}.docx`,
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        );
-
-        // Upload PDF to Cloudinary (if generated)
-        if (pdfContent) {
-          try {
-            pdfUrl = await fileUploadService.uploadFileContent(
-              pdfContent,
-              'tailored-resumes',
-              `tailored_${resumeId}_${timestamp}.pdf`,
-              'application/pdf'
-            );
-          } catch (uploadError: any) {
-            logger.warn('PDF upload failed:', {
-              error: uploadError?.message || String(uploadError),
-            });
-            pdfUrl = null;
-          }
-        }
-
-        downloadUrls.docx = docxUrl;
-        if (pdfUrl) {
-          downloadUrls.pdf = pdfUrl;
+      if (structuredData) {
+        docxContent = await documentService.generateDocxFromStructured(structuredData, template);
+        try {
+          pdfContent = await documentService.generatePdfFromStructured(structuredData, template);
+        } catch (pdfError: any) {
+          logger.warn('PDF generation failed (continuing with DOCX only):', {
+            error: pdfError?.message || String(pdfError),
+          });
+          pdfContent = null;
         }
       } else {
-        logger.info('Skipping document generation; will generate on download', {
-          reason: 'EAGER_FILE_GENERATION is disabled',
-        });
+        const resumeText = fullTailoredResume;
+        docxContent = await documentService.generateDocxFromText(resumeText, template);
+        try {
+          pdfContent = await documentService.generatePdfFromText(resumeText, template);
+        } catch (pdfError: any) {
+          logger.warn('PDF generation failed (continuing with DOCX only):', {
+            error: pdfError?.message || String(pdfError),
+          });
+          pdfContent = null;
+        }
+      }
+
+      // Upload DOCX to Cloudinary
+      const timestamp = Date.now();
+      const docxUrl = await fileUploadService.uploadFileContent(
+        docxContent,
+        'tailored-resumes',
+        `tailored_${resumeId}_${timestamp}.docx`,
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      );
+
+      // Upload PDF to Cloudinary (if generated)
+      let pdfUrl: string | null = null;
+      if (pdfContent) {
+        try {
+          pdfUrl = await fileUploadService.uploadFileContent(
+            pdfContent,
+            'tailored-resumes',
+            `tailored_${resumeId}_${timestamp}.pdf`,
+            'application/pdf'
+          );
+        } catch (uploadError: any) {
+          logger.warn('PDF upload failed:', {
+            error: uploadError?.message || String(uploadError),
+          });
+          pdfUrl = null;
+        }
+      }
+
+      // Save URLs to database
+      const downloadUrls: any = {
+        docx: docxUrl,
+      };
+      if (pdfUrl) {
+        downloadUrls.pdf = pdfUrl;
       }
 
       // Prepare update data
@@ -852,7 +838,7 @@ export class ResumeController {
         data: updateData,
       });
 
-      docGenTime = Date.now();
+      const docGenTime = Date.now();
       const totalTime = Date.now();
 
       logger.info('Resume regeneration completed', {

@@ -30,10 +30,13 @@ export class OpenAIService {
     try {
       // Format resume content
       const formatStartTime = Date.now();
-      const resumeText = this.formatResumeContent(resumeContent);
+      const rawResumeText = this.formatResumeContent(resumeContent);
       
       // Extract keywords from job description for better matching
       const jobKeywords = this.extractImportantKeywords(jobDescription);
+      const isCustomModeForCompact = !!(customInstructions && customInstructions.trim().length > 0);
+      const resumeText = this.compactResumeText(rawResumeText, jobKeywords, { maxLength: isCustomModeForCompact ? 10000 : 8000 });
+      const compactJobDescription = this.compactJobDescription(jobDescription, jobKeywords, { maxLength: isCustomModeForCompact ? 4000 : 3000 });
       
       // Detect role level for seniority-aware language
       const roleLevel = this.detectRoleLevel(jobDescription);
@@ -44,12 +47,15 @@ export class OpenAIService {
         seniority_rules: seniorityRules,
       });
       
-      const prompt = this.buildTailoringPrompt(resumeText, jobDescription, generateFreely, jobKeywords, roleLevel, seniorityRules, customInstructions);
+      const prompt = this.buildTailoringPrompt(resumeText, compactJobDescription, generateFreely, jobKeywords, roleLevel, seniorityRules, customInstructions);
 
       const formatTime = Date.now();
       logger.info('OpenAI: Resume formatted and prompt built', {
         duration_ms: formatTime - formatStartTime,
         resume_text_length: resumeText.length,
+        resume_text_original_length: rawResumeText.length,
+        job_description_length: compactJobDescription.length,
+        job_description_original_length: jobDescription.length,
         prompt_length: prompt.length,
         has_custom_instructions: !!customInstructions && customInstructions.length > 0,
       });
@@ -95,7 +101,7 @@ export class OpenAIService {
       }
 
       // Use higher temperature and more tokens for custom mode to allow more creative/free generation
-      const isCustomMode = customInstructions && customInstructions.trim().length > 0;
+      const isCustomMode = !!(customInstructions && customInstructions.trim().length > 0);
       const temperature = isCustomMode ? 0.9 : 0.7; // Higher temperature for more creative/free generation in custom mode
       const maxTokens = isCustomMode ? 3000 : 2000; // More tokens for comprehensive resumes with all keywords
 
@@ -177,10 +183,13 @@ export class OpenAIService {
     try {
       // Format resume content
       const formatStartTime = Date.now();
-      const resumeText = currentResumeText || this.formatResumeContent(resumeContent);
+      const rawResumeText = currentResumeText || this.formatResumeContent(resumeContent);
       
       // Extract keywords from job description
       const jobKeywords = this.extractImportantKeywords(jobDescription);
+      const isCustomModeForCompact = !!(customInstructions && customInstructions.trim().length > 0);
+      const resumeText = this.compactResumeText(rawResumeText, jobKeywords, { maxLength: isCustomModeForCompact ? 10000 : 8000 });
+      const compactJobDescription = this.compactJobDescription(jobDescription, jobKeywords, { maxLength: isCustomModeForCompact ? 4000 : 3000 });
       
       // Detect role level for intelligent tailoring
       const roleLevel = this.detectRoleLevel(jobDescription);
@@ -189,7 +198,7 @@ export class OpenAIService {
       // Build focused regeneration prompt
       const prompt = this.buildRegenerationPrompt(
         resumeText,
-        jobDescription,
+        compactJobDescription,
         generateFreely,
         jobKeywords,
         missingKeywords,
@@ -203,6 +212,9 @@ export class OpenAIService {
       logger.info('OpenAI: Resume formatted and regeneration prompt built', {
         duration_ms: formatTime - formatStartTime,
         resume_text_length: resumeText.length,
+        resume_text_original_length: rawResumeText.length,
+        job_description_length: compactJobDescription.length,
+        job_description_original_length: jobDescription.length,
         prompt_length: prompt.length,
         missing_keywords_count: missingKeywords.length,
       });
@@ -962,6 +974,136 @@ MANDATORY REQUIREMENTS:
     }
 
     return text;
+  }
+
+  private compactResumeText(
+    resumeText: string,
+    jobKeywords: string[],
+    options?: { maxLength?: number }
+  ): string {
+    const maxLength = options?.maxLength ?? 8000;
+    if (!resumeText || resumeText.length <= maxLength) {
+      return resumeText;
+    }
+
+    const keywordSet = new Set(jobKeywords.map(keyword => keyword.toLowerCase()));
+    const isSectionHeader = (line: string) =>
+      /^(PROFESSIONAL SUMMARY|SUMMARY|EXPERIENCE|PROFESSIONAL EXPERIENCE|SKILLS|EDUCATION|PROJECTS|CERTIFICATIONS|ACHIEVEMENTS)\b/i.test(line);
+    const hasKeyword = (line: string) => {
+      const lower = line.toLowerCase();
+      for (const keyword of keywordSet) {
+        if (keyword.length >= 3 && lower.includes(keyword)) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const lines = resumeText.split(/\r?\n/);
+    const keptLines: string[] = [];
+    let currentSection = '';
+    const sectionCounts: Record<string, number> = {};
+    const sectionLimits: Record<string, number> = {
+      summary: 6,
+      experience: 20,
+      skills: 6,
+      education: 6,
+      projects: 8,
+      certifications: 6,
+      achievements: 6,
+      other: 6,
+    };
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+
+      if (isSectionHeader(trimmed)) {
+        currentSection = trimmed.toLowerCase();
+        keptLines.push(trimmed);
+        continue;
+      }
+
+      const sectionKey =
+        currentSection.includes('summary') ? 'summary' :
+        currentSection.includes('experience') ? 'experience' :
+        currentSection.includes('skills') ? 'skills' :
+        currentSection.includes('education') ? 'education' :
+        currentSection.includes('project') ? 'projects' :
+        currentSection.includes('certification') ? 'certifications' :
+        currentSection.includes('achievement') ? 'achievements' :
+        'other';
+
+      const limit = sectionLimits[sectionKey] ?? 6;
+      const count = sectionCounts[sectionKey] ?? 0;
+      const isBullet = trimmed.startsWith('•') || trimmed.startsWith('-');
+      const hasNumbers = /\d/.test(trimmed);
+
+      if (count < limit || hasKeyword(trimmed) || hasNumbers || isBullet) {
+        keptLines.push(trimmed);
+        sectionCounts[sectionKey] = count + 1;
+      }
+    }
+
+    const compactText = keptLines.join('\n');
+    return compactText.length > 0 ? compactText.slice(0, maxLength) : resumeText.slice(0, maxLength);
+  }
+
+  private compactJobDescription(
+    jobDescription: string,
+    jobKeywords: string[],
+    options?: { maxLength?: number }
+  ): string {
+    const maxLength = options?.maxLength ?? 3000;
+    if (!jobDescription || jobDescription.length <= maxLength) {
+      return jobDescription;
+    }
+
+    const boilerplatePatterns = [
+      /equal opportunity[\s\S]*$/i,
+      /eeo[\s\S]*$/i,
+      /we are an equal opportunity employer[\s\S]*$/i,
+      /background check[\s\S]*$/i,
+      /drug[-\s]?free workplace[\s\S]*$/i,
+      /benefits include[\s\S]*$/i,
+      /benefits and perks[\s\S]*$/i,
+      /about us[\s\S]*$/i,
+      /company overview[\s\S]*$/i,
+      /who we are[\s\S]*$/i,
+      /apply (now|today)[\s\S]*$/i,
+    ];
+
+    let cleaned = jobDescription;
+    for (const pattern of boilerplatePatterns) {
+      cleaned = cleaned.replace(pattern, '').trim();
+    }
+
+    const keywordSet = new Set(jobKeywords.map(keyword => keyword.toLowerCase()));
+    const sentences = cleaned.split(/(?<=[.!?])\s+|\n+/);
+    const importantSentences: string[] = [];
+
+    for (const sentence of sentences) {
+      const trimmed = sentence.trim();
+      if (!trimmed) continue;
+
+      const lower = trimmed.toLowerCase();
+      const hasKeyword = Array.from(keywordSet).some(keyword => keyword.length >= 3 && lower.includes(keyword));
+      const isRequirement =
+        /requirements?|qualifications?|responsibilities?|must have|preferred|skills?|experience|what you will do|what you'll do|you will/i.test(lower);
+
+      if (hasKeyword || isRequirement) {
+        importantSentences.push(trimmed);
+      }
+    }
+
+    const compactText = importantSentences.join(' ');
+    if (compactText.length >= 300) {
+      return compactText.slice(0, maxLength);
+    }
+
+    return cleaned.slice(0, maxLength);
   }
 
   /**

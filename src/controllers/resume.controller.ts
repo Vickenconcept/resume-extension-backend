@@ -331,134 +331,9 @@ export class ResumeController {
         (qualityScore as any).overall = Math.round(truth * 0.4 + comp * 0.3 + kw * 0.3);
       }
 
-      // Generate documents
-      const docGenStartTime = Date.now();
-      logger.info('Generating tailored resume documents...');
-
-      // Get user's template preference
-      const templateStartTime = Date.now();
-      const template = await this.getUserTemplate(user.id);
-      const templateTime = Date.now();
-      logger.info('Template lookup completed', {
-        duration_ms: templateTime - templateStartTime,
-        total_elapsed_ms: templateTime - startTime,
-      });
-
-      let docxContent: Buffer;
-      let pdfContent: Buffer | null = null;
-      let pdfUrl: string | null = null;
-
-      // Prefer full text over structured data (full text contains ALL content)
-      // Use structured data only if full text is not available
-      const resumeText = fullTailoredResume || resumeContent.raw_text || '';
-
-      if (resumeText && resumeText.trim().length > 0) {
-        const docxStartTime = Date.now();
-        // Use text-based generation (preserves ALL content including PROJECT HIGHLIGHTS, LANGUAGE, etc.)
-        logger.info('Using text-based generation from fullTailoredResume');
-        docxContent = await documentService.generateDocxFromText(resumeText, template);
-        const docxTime = Date.now();
-        logger.info('DOCX generation completed', {
-          duration_ms: docxTime - docxStartTime,
-          total_elapsed_ms: docxTime - startTime,
-        });
-        
-        // Try to generate PDF (optional - may fail if Chromium not available)
-        try {
-          const pdfStartTime = Date.now();
-          pdfContent = await documentService.generatePdfFromText(resumeText, template);
-          const pdfTime = Date.now();
-          logger.info('PDF generation completed', {
-            duration_ms: pdfTime - pdfStartTime,
-            total_elapsed_ms: pdfTime - startTime,
-          });
-        } catch (pdfError: any) {
-          logger.warn('PDF generation failed (continuing with DOCX only):', {
-            error: pdfError?.message || String(pdfError),
-          });
-          pdfContent = null;
-        }
-      } else if (structuredData) {
-        const docxStartTime = Date.now();
-        // Fallback to structured data if no text available
-        logger.warn('Using structured data generation - full text not available');
-        docxContent = await documentService.generateDocxFromStructured(structuredData, template);
-        const docxTime = Date.now();
-        logger.info('DOCX generation completed', {
-          duration_ms: docxTime - docxStartTime,
-          total_elapsed_ms: docxTime - startTime,
-        });
-        
-        try {
-          const pdfStartTime = Date.now();
-          pdfContent = await documentService.generatePdfFromStructured(structuredData, template);
-          const pdfTime = Date.now();
-          logger.info('PDF generation completed', {
-            duration_ms: pdfTime - pdfStartTime,
-            total_elapsed_ms: pdfTime - startTime,
-          });
-        } catch (pdfError: any) {
-          logger.warn('PDF generation failed (continuing with DOCX only):', {
-            error: pdfError?.message || String(pdfError),
-          });
-          pdfContent = null;
-        }
-      } else {
-        throw new Error('No resume content available for document generation');
-      }
-
-      // Upload DOCX to Cloudinary
-      const timestamp = Date.now();
-      const docxUploadStartTime = Date.now();
-      const docxUrl = await fileUploadService.uploadFileContent(
-        docxContent,
-        'tailored-resumes',
-        `tailored_${resumeId}_${timestamp}.docx`,
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-      );
-      const docxUploadTime = Date.now();
-      logger.info('DOCX upload completed', {
-        duration_ms: docxUploadTime - docxUploadStartTime,
-        total_elapsed_ms: docxUploadTime - startTime,
-      });
-
-      // Upload PDF to Cloudinary (if generated)
-      if (pdfContent) {
-        try {
-          const pdfUploadStartTime = Date.now();
-          pdfUrl = await fileUploadService.uploadFileContent(
-            pdfContent,
-            'tailored-resumes',
-            `tailored_${resumeId}_${timestamp}.pdf`,
-            'application/pdf'
-          );
-          const pdfUploadTime = Date.now();
-          logger.info('PDF upload completed', {
-            duration_ms: pdfUploadTime - pdfUploadStartTime,
-            total_elapsed_ms: pdfUploadTime - startTime,
-          });
-        } catch (uploadError: any) {
-          logger.warn('PDF upload failed:', {
-            error: uploadError?.message || String(uploadError),
-          });
-          pdfUrl = null;
-        }
-      }
-
-      // Save URLs to database
-      const downloadUrls: any = {
-        docx: docxUrl,
-      };
-      if (pdfUrl) {
-        downloadUrls.pdf = pdfUrl;
-      }
-
       // Prepare update data - use type assertion to bypass TypeScript errors
       // until Prisma client is regenerated
       const updateData = {
-        downloadUrls: downloadUrls as any,
-        tailoredDocxUrl: docxUrl,
-        tailoredPdfUrl: pdfUrl || null,
         tailoredResumeText: fullTailoredResume,
         coverLetter,
         qualityScore: qualityScore as any,
@@ -476,12 +351,10 @@ export class ResumeController {
         total_elapsed_ms: dbUpdateTime - startTime,
       });
 
-      const docGenTime = Date.now();
       const totalTime = Date.now();
 
       logger.info('Resume tailoring completed', {
         openai_duration_ms: openAiTime - openAiStartTime,
-        document_generation_ms: docGenTime - docGenStartTime,
         total_duration_ms: totalTime - startTime,
         total_duration_seconds: (totalTime - startTime) / 1000,
       });
@@ -491,7 +364,6 @@ export class ResumeController {
         {
           fullDocument: fullTailoredResume,
           coverLetter,
-          downloadUrls,
           qualityScore,
           similarityMetrics,
         },
@@ -756,77 +628,8 @@ export class ResumeController {
         }
       }
 
-      // Generate documents
-      const docGenStartTime = Date.now();
-      // Get user's template preference
-      const template = await this.getUserTemplate(user.id);
-      
-      let docxContent: Buffer;
-      let pdfContent: Buffer | null = null;
-
-      if (structuredData) {
-        docxContent = await documentService.generateDocxFromStructured(structuredData, template);
-        try {
-          pdfContent = await documentService.generatePdfFromStructured(structuredData, template);
-        } catch (pdfError: any) {
-          logger.warn('PDF generation failed (continuing with DOCX only):', {
-            error: pdfError?.message || String(pdfError),
-          });
-          pdfContent = null;
-        }
-      } else {
-        const resumeText = fullTailoredResume;
-        docxContent = await documentService.generateDocxFromText(resumeText, template);
-        try {
-          pdfContent = await documentService.generatePdfFromText(resumeText, template);
-        } catch (pdfError: any) {
-          logger.warn('PDF generation failed (continuing with DOCX only):', {
-            error: pdfError?.message || String(pdfError),
-          });
-          pdfContent = null;
-        }
-      }
-
-      // Upload DOCX to Cloudinary
-      const timestamp = Date.now();
-      const docxUrl = await fileUploadService.uploadFileContent(
-        docxContent,
-        'tailored-resumes',
-        `tailored_${resumeId}_${timestamp}.docx`,
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-      );
-
-      // Upload PDF to Cloudinary (if generated)
-      let pdfUrl: string | null = null;
-      if (pdfContent) {
-        try {
-          pdfUrl = await fileUploadService.uploadFileContent(
-            pdfContent,
-            'tailored-resumes',
-            `tailored_${resumeId}_${timestamp}.pdf`,
-            'application/pdf'
-          );
-        } catch (uploadError: any) {
-          logger.warn('PDF upload failed:', {
-            error: uploadError?.message || String(uploadError),
-          });
-          pdfUrl = null;
-        }
-      }
-
-      // Save URLs to database
-      const downloadUrls: any = {
-        docx: docxUrl,
-      };
-      if (pdfUrl) {
-        downloadUrls.pdf = pdfUrl;
-      }
-
       // Prepare update data
       const updateData = {
-        downloadUrls: downloadUrls as any,
-        tailoredDocxUrl: docxUrl,
-        tailoredPdfUrl: pdfUrl || null,
         tailoredResumeText: fullTailoredResume,
         coverLetter,
         qualityScore: qualityScore as any,
@@ -838,7 +641,6 @@ export class ResumeController {
         data: updateData,
       });
 
-      const docGenTime = Date.now();
       const totalTime = Date.now();
 
       logger.info('Resume regeneration completed', {
@@ -847,8 +649,6 @@ export class ResumeController {
         total_duration_seconds: (totalTime - startTime) / 1000,
         breakdown: {
           openai_ms: openAiTime - startTime,
-          doc_generation_ms: docGenTime - docGenStartTime,
-          upload_ms: totalTime - docGenTime,
         },
         similarity_score: similarityMetrics.similarityScore,
         quality_score: qualityScore.overall,
@@ -860,7 +660,6 @@ export class ResumeController {
           fullResume: fullTailoredResume,
           fullDocument: fullTailoredResume, // Keep for backward compatibility
           coverLetter,
-          downloadUrls,
           qualityScore,
           similarityMetrics,
         },
@@ -1174,19 +973,6 @@ export class ResumeController {
       // Delete from Cloudinary
       try {
         await fileUploadService.deleteFile(resume.cloudinaryPublicId, 'raw');
-        if (resume.tailoredDocxUrl) {
-          // Extract public_id from Cloudinary URL if possible
-          const docxMatch = resume.tailoredDocxUrl.match(/\/v\d+\/(.+)\.[^.]+$/);
-          if (docxMatch) {
-            await fileUploadService.deleteFile(docxMatch[1], 'raw');
-          }
-        }
-        if (resume.tailoredPdfUrl) {
-          const pdfMatch = resume.tailoredPdfUrl.match(/\/v\d+\/(.+)\.[^.]+$/);
-          if (pdfMatch) {
-            await fileUploadService.deleteFile(pdfMatch[1], 'raw');
-          }
-        }
       } catch (e: any) {
         logger.warn('Failed to delete files from Cloudinary:', e);
       }
@@ -1284,49 +1070,11 @@ export class ResumeController {
           format: downloadFormat,
         });
       } else {
-        // Fallback to pre-generated file from Cloudinary
-        logger.info('No content available, using pre-generated file from Cloudinary');
-        const downloadUrls = resume.downloadUrls as any;
-        const downloadUrl =
-          downloadFormat === 'pdf'
-            ? resume.tailoredPdfUrl || downloadUrls?.pdf
-            : resume.tailoredDocxUrl || downloadUrls?.docx;
-
-        if (!downloadUrl) {
-          ApiResponseFormatter.error(
-            res,
-            'Download URL not found. Please generate tailored content first.',
-            404
-          );
-          return;
-        }
-
-        // Fetch file from Cloudinary URL
-        const response = await fetch(downloadUrl);
-        if (!response.ok) {
-          throw new Error('Failed to fetch file from storage');
-        }
-
-        const fileContent = Buffer.from(await response.arrayBuffer());
-        const filename = `tailored-resume-${new Date().toISOString().split('T')[0]}.${downloadFormat}`;
-        const contentType =
-          downloadFormat === 'pdf'
-            ? 'application/pdf'
-            : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-
-        // Ensure fileContent is a Buffer
-        if (!Buffer.isBuffer(fileContent)) {
-          logger.error('File content from Cloudinary is not a Buffer', { type: typeof fileContent });
-          throw new Error('Invalid file content type');
-        }
-
-        res.status(200);
-        res.setHeader('Content-Type', contentType);
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        res.setHeader('Content-Length', fileContent.length.toString());
-        
-        // Use res.end() for binary data to avoid any JSON middleware interference
-        res.end(fileContent);
+        ApiResponseFormatter.error(
+          res,
+          'No content available. Please generate tailored content first.',
+          404
+        );
         return;
       }
       
@@ -1384,42 +1132,7 @@ export class ResumeController {
       }
 
       // Always create a new version record for each download (snapshot)
-      // Upload file to Cloudinary and save URLs
-      let uploadedDocxUrl: string | null = null;
-      let uploadedPdfUrl: string | null = null;
-      const downloadUrls: { docx?: string; pdf?: string } = {};
-
       try {
-        // Upload the generated file to Cloudinary
-        const timestamp = Date.now();
-        const dateStr = new Date().toISOString().split('T')[0];
-        const filename = `tailored-resume-${dateStr}-${timestamp}`;
-        
-        if (downloadFormat === 'docx') {
-          const mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-          const uploadedUrl = await fileUploadService.uploadFileContent(
-            fileContent,
-            'tailored-resumes',
-            `${filename}.docx`,
-            mimeType
-          );
-          uploadedDocxUrl = uploadedUrl;
-          downloadUrls.docx = uploadedUrl;
-          logger.info('DOCX file uploaded to Cloudinary', { url: uploadedDocxUrl, filename: `${filename}.docx` });
-        } else {
-          const mimeType = 'application/pdf';
-          const uploadedUrl = await fileUploadService.uploadFileContent(
-            fileContent,
-            'tailored-resumes',
-            `${filename}.pdf`,
-            mimeType
-          );
-          uploadedPdfUrl = uploadedUrl;
-          downloadUrls.pdf = uploadedUrl;
-          logger.info('PDF file uploaded to Cloudinary', { url: uploadedPdfUrl, filename: `${filename}.pdf` });
-        }
-
-        // Create new version record with uploaded URLs
         const versionName = `Downloaded ${new Date().toLocaleDateString()} - ${downloadFormat.toUpperCase()}`;
         const newVersion = await prisma.resumeVersion.create({
           data: {
@@ -1427,9 +1140,6 @@ export class ResumeController {
             versionName,
             tailoredResumeText: resumeText,
             coverLetter: coverLetterText || null,
-            tailoredDocxUrl: uploadedDocxUrl,
-            tailoredPdfUrl: uploadedPdfUrl,
-            downloadUrls: downloadUrls,
             isCurrent: false, // Download versions are snapshots, not current editable versions
           },
         });
@@ -1439,12 +1149,10 @@ export class ResumeController {
           versionId: newVersion.id,
           format: downloadFormat,
           versionName,
-          hasDocxUrl: !!uploadedDocxUrl,
-          hasPdfUrl: !!uploadedPdfUrl,
         });
       } catch (versionError: any) {
-        logger.warn('Failed to create version record or upload file (continuing with download):', versionError);
-        // Don't fail the download if version creation/upload fails
+        logger.warn('Failed to create version record (continuing with download):', versionError);
+        // Don't fail the download if version creation fails
       }
 
       // Send the generated file
@@ -1507,9 +1215,6 @@ export class ResumeController {
       const updateData: any = {};
       if (tailoredResumeText !== undefined) {
         updateData.tailoredResumeText = tailoredResumeText;
-        updateData.tailoredDocxUrl = null;
-        updateData.tailoredPdfUrl = null;
-        updateData.downloadUrls = null;
       }
       if (coverLetter !== undefined) {
         updateData.coverLetter = coverLetter;
@@ -1539,9 +1244,6 @@ export class ResumeController {
           data: {
             tailoredResumeText: tailoredResumeText !== undefined ? tailoredResumeText : existingVersion.tailoredResumeText,
             coverLetter: coverLetter !== undefined ? coverLetter : existingVersion.coverLetter,
-            tailoredDocxUrl: undefined,
-            tailoredPdfUrl: undefined,
-            downloadUrls: undefined,
           } as any,
         });
       } else if (tailoredResumeText) {
@@ -1631,27 +1333,18 @@ export class ResumeController {
       ApiResponseFormatter.success(
         res,
         {
-          versions: versions.map(version => {
-            const downloadUrls = version.downloadUrls as any || {};
-            return {
-              id: version.id,
-              versionId: version.id,
-              resumeId: version.resume.resumeId,
-              resumeName: version.resume.displayName || version.resume.filename,
-              resumeFilename: version.resume.filename,
-              isResumeDefault: version.resume.isDefault,
-              versionName: version.versionName || `Version ${version.id}`,
-              isCurrent: version.isCurrent,
-              hasDocx: !!version.tailoredDocxUrl || !!downloadUrls.docx,
-              hasPdf: !!version.tailoredPdfUrl || !!downloadUrls.pdf,
-              downloadUrls: {
-                docx: version.tailoredDocxUrl || downloadUrls.docx || null,
-                pdf: version.tailoredPdfUrl || downloadUrls.pdf || null,
-              },
-              createdAt: version.createdAt.toISOString(),
-              updatedAt: version.updatedAt.toISOString(),
-            };
-          }),
+          versions: versions.map(version => ({
+            id: version.id,
+            versionId: version.id,
+            resumeId: version.resume.resumeId,
+            resumeName: version.resume.displayName || version.resume.filename,
+            resumeFilename: version.resume.filename,
+            isResumeDefault: version.resume.isDefault,
+            versionName: version.versionName || `Version ${version.id}`,
+            isCurrent: version.isCurrent,
+            createdAt: version.createdAt.toISOString(),
+            updatedAt: version.updatedAt.toISOString(),
+          })),
           pagination: {
             page,
             limit,
@@ -1708,8 +1401,6 @@ export class ResumeController {
 
       // Create a new resume record from the version
       const newResumeId = `resume_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      const downloadUrls = version.downloadUrls as any || {};
-
       const newResume = await prisma.resume.create({
         data: {
           userId: user.id,
@@ -1721,9 +1412,6 @@ export class ResumeController {
           parsedContent: version.resume.parsedContent as any, // Copy parsed content from original
           tailoredResumeText: version.tailoredResumeText,
           coverLetter: version.coverLetter || null,
-          tailoredDocxUrl: version.tailoredDocxUrl || downloadUrls.docx || null,
-          tailoredPdfUrl: version.tailoredPdfUrl || downloadUrls.pdf || null,
-          downloadUrls: version.downloadUrls as any || null,
           qualityScore: version.resume.qualityScore as any, // Copy quality score from original
           similarityMetrics: version.resume.similarityMetrics as any, // Copy similarity metrics from original
           isDefault: false, // New resume is not default
@@ -1787,41 +1475,6 @@ export class ResumeController {
       if (!version) {
         ApiResponseFormatter.error(res, 'Resume version not found', 404);
         return;
-      }
-
-      // Delete files from Cloudinary if they exist
-      try {
-        if (version.tailoredDocxUrl) {
-          const docxMatch = version.tailoredDocxUrl.match(/\/v\d+\/(.+)\.[^.]+$/);
-          if (docxMatch) {
-            await fileUploadService.deleteFile(docxMatch[1], 'raw');
-          }
-        }
-        if (version.tailoredPdfUrl) {
-          const pdfMatch = version.tailoredPdfUrl.match(/\/v\d+\/(.+)\.[^.]+$/);
-          if (pdfMatch) {
-            await fileUploadService.deleteFile(pdfMatch[1], 'raw');
-          }
-        }
-        // Also check downloadUrls
-        const downloadUrls = version.downloadUrls as any;
-        if (downloadUrls) {
-          if (downloadUrls.docx) {
-            const docxMatch = downloadUrls.docx.match(/\/v\d+\/(.+)\.[^.]+$/);
-            if (docxMatch) {
-              await fileUploadService.deleteFile(docxMatch[1], 'raw');
-            }
-          }
-          if (downloadUrls.pdf) {
-            const pdfMatch = downloadUrls.pdf.match(/\/v\d+\/(.+)\.[^.]+$/);
-            if (pdfMatch) {
-              await fileUploadService.deleteFile(pdfMatch[1], 'raw');
-            }
-          }
-        }
-      } catch (cloudinaryError: any) {
-        logger.warn('Failed to delete version files from Cloudinary:', cloudinaryError);
-        // Continue with deletion even if Cloudinary deletion fails
       }
 
       // Delete the version from database

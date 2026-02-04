@@ -275,6 +275,10 @@ export class ResumeController {
       );
 
       const openAiTime = Date.now();
+      logger.info('OpenAI API completed', {
+        duration_ms: openAiTime - openAiStartTime,
+        total_elapsed_ms: openAiTime - startTime,
+      });
 
       // Get structured data and cover letter
       const structuredData = tailoredContent.structured || null;
@@ -287,19 +291,31 @@ export class ResumeController {
       // Calculate similarity metrics using AI-powered semantic analysis FIRST
       // so we can align the quality keyword score with ATS keyword coverage
       const originalResumeText = resumeContent.raw_text || '';
+      const similarityStartTime = Date.now();
       const similarityMetrics = await qualityService.calculateSimilarity(
         fullTailoredResume || originalResumeText,
         jobDescription,
         generateFreelyMode // Pass the mode so AI can adjust scoring
       );
+      const similarityTime = Date.now();
+      logger.info('Similarity metrics completed', {
+        duration_ms: similarityTime - similarityStartTime,
+        total_elapsed_ms: similarityTime - startTime,
+      });
 
       // Then validate content quality
+      const qualityStartTime = Date.now();
       const qualityScore = qualityService.validateContent(
         resumeContent,
         fullTailoredResume,
         jobDescription,
         generateFreelyMode
       );
+      const qualityTime = Date.now();
+      logger.info('Quality validation completed', {
+        duration_ms: qualityTime - qualityStartTime,
+        total_elapsed_ms: qualityTime - startTime,
+      });
 
       // Align quality keywordMatch with ATS keywordCoverage for a consistent UX
       if (similarityMetrics && typeof similarityMetrics.keywordCoverage === 'number') {
@@ -320,7 +336,13 @@ export class ResumeController {
       logger.info('Generating tailored resume documents...');
 
       // Get user's template preference
+      const templateStartTime = Date.now();
       const template = await this.getUserTemplate(user.id);
+      const templateTime = Date.now();
+      logger.info('Template lookup completed', {
+        duration_ms: templateTime - templateStartTime,
+        total_elapsed_ms: templateTime - startTime,
+      });
 
       let docxContent: Buffer;
       let pdfContent: Buffer | null = null;
@@ -331,13 +353,25 @@ export class ResumeController {
       const resumeText = fullTailoredResume || resumeContent.raw_text || '';
 
       if (resumeText && resumeText.trim().length > 0) {
+        const docxStartTime = Date.now();
         // Use text-based generation (preserves ALL content including PROJECT HIGHLIGHTS, LANGUAGE, etc.)
         logger.info('Using text-based generation from fullTailoredResume');
         docxContent = await documentService.generateDocxFromText(resumeText, template);
+        const docxTime = Date.now();
+        logger.info('DOCX generation completed', {
+          duration_ms: docxTime - docxStartTime,
+          total_elapsed_ms: docxTime - startTime,
+        });
         
         // Try to generate PDF (optional - may fail if Chromium not available)
         try {
+          const pdfStartTime = Date.now();
           pdfContent = await documentService.generatePdfFromText(resumeText, template);
+          const pdfTime = Date.now();
+          logger.info('PDF generation completed', {
+            duration_ms: pdfTime - pdfStartTime,
+            total_elapsed_ms: pdfTime - startTime,
+          });
         } catch (pdfError: any) {
           logger.warn('PDF generation failed (continuing with DOCX only):', {
             error: pdfError?.message || String(pdfError),
@@ -345,12 +379,24 @@ export class ResumeController {
           pdfContent = null;
         }
       } else if (structuredData) {
+        const docxStartTime = Date.now();
         // Fallback to structured data if no text available
         logger.warn('Using structured data generation - full text not available');
         docxContent = await documentService.generateDocxFromStructured(structuredData, template);
+        const docxTime = Date.now();
+        logger.info('DOCX generation completed', {
+          duration_ms: docxTime - docxStartTime,
+          total_elapsed_ms: docxTime - startTime,
+        });
         
         try {
+          const pdfStartTime = Date.now();
           pdfContent = await documentService.generatePdfFromStructured(structuredData, template);
+          const pdfTime = Date.now();
+          logger.info('PDF generation completed', {
+            duration_ms: pdfTime - pdfStartTime,
+            total_elapsed_ms: pdfTime - startTime,
+          });
         } catch (pdfError: any) {
           logger.warn('PDF generation failed (continuing with DOCX only):', {
             error: pdfError?.message || String(pdfError),
@@ -363,22 +409,34 @@ export class ResumeController {
 
       // Upload DOCX to Cloudinary
       const timestamp = Date.now();
+      const docxUploadStartTime = Date.now();
       const docxUrl = await fileUploadService.uploadFileContent(
         docxContent,
         'tailored-resumes',
         `tailored_${resumeId}_${timestamp}.docx`,
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       );
+      const docxUploadTime = Date.now();
+      logger.info('DOCX upload completed', {
+        duration_ms: docxUploadTime - docxUploadStartTime,
+        total_elapsed_ms: docxUploadTime - startTime,
+      });
 
       // Upload PDF to Cloudinary (if generated)
       if (pdfContent) {
         try {
+          const pdfUploadStartTime = Date.now();
           pdfUrl = await fileUploadService.uploadFileContent(
             pdfContent,
             'tailored-resumes',
             `tailored_${resumeId}_${timestamp}.pdf`,
             'application/pdf'
           );
+          const pdfUploadTime = Date.now();
+          logger.info('PDF upload completed', {
+            duration_ms: pdfUploadTime - pdfUploadStartTime,
+            total_elapsed_ms: pdfUploadTime - startTime,
+          });
         } catch (uploadError: any) {
           logger.warn('PDF upload failed:', {
             error: uploadError?.message || String(uploadError),
@@ -407,9 +465,15 @@ export class ResumeController {
         similarityMetrics: similarityMetrics as any,
       } as any; // Type assertion to allow fields that exist in DB but not yet in Prisma client
 
+      const dbUpdateStartTime = Date.now();
       await prisma.resume.update({
         where: { id: resume.id },
         data: updateData,
+      });
+      const dbUpdateTime = Date.now();
+      logger.info('Resume update completed', {
+        duration_ms: dbUpdateTime - dbUpdateStartTime,
+        total_elapsed_ms: dbUpdateTime - startTime,
       });
 
       const docGenTime = Date.now();

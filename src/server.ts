@@ -45,12 +45,24 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Request logging
+// Request logging with response timing
 app.use((req, res, next) => {
+  const startTime = process.hrtime.bigint();
   logger.info(`${req.method} ${req.path}`, {
     ip: req.ip,
     userAgent: req.get('user-agent'),
   });
+
+  res.on('finish', () => {
+    const durationMs = Number(process.hrtime.bigint() - startTime) / 1_000_000;
+    logger.info('Request completed', {
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      duration_ms: Math.round(durationMs),
+    });
+  });
+
   next();
 });
 

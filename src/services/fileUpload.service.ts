@@ -167,6 +167,7 @@ export class FileUploadService {
         uploadOptions
       );
 
+      
       logger.info('File uploaded to Cloudinary', {
         folder,
         publicId,

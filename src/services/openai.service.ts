@@ -1433,6 +1433,7 @@ MANDATORY REQUIREMENTS:
       return `You are helping a job seeker tailor their resume to a specific job description and generate a professional cover letter based on their custom instructions.
 
 ⚠️ DOMAIN-AGNOSTIC INSTRUCTION: This app works for ALL job types (software engineering, healthcare, finance, marketing, sales, operations, etc.). Ignore any non-skill keywords like dates, locations, company names, application instructions, or posting metadata. Only treat as important if they are actual required skills/tools/qualifications. Use semantic understanding to distinguish real skills from job posting boilerplate.
+TARGET ROLE SENIORITY: ${roleLevel.toUpperCase()}
 
 🚨 CUSTOM MODE - USER INSTRUCTIONS (ABSOLUTE PRIORITY - NO RESTRICTIONS):
 The user has provided specific instructions for how they want their resume to be tailored. You have FULL FREEDOM to follow these instructions. There are NO restrictions on what you can add or modify.
@@ -1572,6 +1573,12 @@ CRITICAL RULES FOR FLEXIBLE MODE (SMART MATCH MODE - HIGH MATCH WITHOUT FAKE EXP
 7. Keep personal information (name, contact, address) exactly as provided
 8. Preserve ALL major sections, experience, and projects from the original resume (but enhance them)
 9. Create a "Keywords" or "Technologies" section if needed to include important terms without distorting experience
+10. EXPERIENCE FRAMING (FLEXIBLE MODE):
+   - Keep employment dates and job titles factually consistent
+   - Adjust seniority tone to match the TARGET ROLE SENIORITY using wording only
+   - If the resume reads overqualified, reduce overly senior verbs ("architected", "owned end-to-end") and emphasize hands-on implementation
+   - If the resume reads underqualified, emphasize ownership and scope only when supported by existing work
+   - Do NOT claim leadership, authority, or responsibilities that are not supported by the original resume
 ${riskLevel === 'HIGH' ? `HIGH CONSEQUENCE ROLE DETECTED — CREDIBILITY OVERRIDES KEYWORD MATCH
 This role involves regulated, safety-critical, or legally sensitive responsibilities.
 CRITICAL RULES:
@@ -1654,23 +1661,21 @@ Your task: Return a STRUCTURED JSON object with the tailored resume data and cov
   "coverLetter": "A professional cover letter (3-4 paragraphs) expressing interest, highlighting 2-3 relevant experiences/skills, and showing fit for the role. Use the person's name from the resume."
 }
 
-MANDATORY REQUIREMENTS FOR FLEXIBLE MODE (100% KEYWORD INCLUSION):
-- Include ALL information from the original resume PLUS add ANY missing skills/experiences required by the job
-- If a section doesn't exist in the original resume, create it if the job requires it
-- For skills, organize them into the provided categories AND ADD EVERY job-required skill that is missing
-- For experience, include ALL positions with ALL bullet points ENHANCED to match the job requirements
-- CREDIBILITY IS CRITICAL: When adding keywords to skills, REFRAME at least one experience bullet to naturally demonstrate that keyword through actual work
-- Example: If adding "RAG" to skills, reframe a bullet about ML/API work to show "Built APIs incorporating retrieval-augmented generation (RAG) patterns for intelligent response systems"
+MANDATORY REQUIREMENTS FOR FLEXIBLE MODE (SMART MATCH):
+- Include ALL information from the original resume - nothing should be missing
+- Keep employment dates and job titles factually consistent
+- For skills, organize them into the provided categories
+- You MAY add adjacent, low-risk keywords to the skills section if they are reasonable for the candidate's background
+- Experience bullets must remain truthful to the original responsibilities; rephrase to align with the job focus
 - Make keywords feel AUTHENTIC and SUPPORTED - recruiters should see evidence in bullets, not just keyword lists
-- ADD new bullet points or skills if needed to meet 100% of job requirements - NO KEYWORD LEFT BEHIND
-- If the job mentions any technology/tool/concept, it MUST appear in the resume AND be supported by evidence in experience bullets where applicable
+- Avoid stuffing; if a keyword does not fit naturally, omit it
 - Keep the structure consistent and complete
-- Your goal is to achieve 100% keyword match - every high-impact keyword from the job description must be present AND feel naturally integrated
-- BEFORE FINALIZING: Verify that EVERY keyword from the job description appears in the tailored resume AND feels credible, not forced`;
+- BEFORE FINALIZING: Verify that the resume feels credible to a human recruiter`;
     } else {
       return `You are helping a job seeker tailor their resume to a specific job description and generate a professional cover letter.
 
 ⚠️ DOMAIN-AGNOSTIC INSTRUCTION: This app works for ALL job types (software engineering, healthcare, finance, marketing, sales, operations, etc.). Ignore any non-skill keywords like dates, locations, company names, application instructions, or posting metadata. Only treat as important if they are actual required skills/tools/qualifications. Use semantic understanding to distinguish real skills from job posting boilerplate.
+TARGET ROLE SENIORITY: ${roleLevel.toUpperCase()}
 
 CRITICAL RULES FOR STRICT MODE (LIGHT TAILORING MODE - CONSERVATIVE):
 1. ONLY use information from the provided resume - do not invent or add any experience, skills, achievements, education, or personal details that are not present
@@ -1684,12 +1689,16 @@ CRITICAL RULES FOR STRICT MODE (LIGHT TAILORING MODE - CONSERVATIVE):
    - Example: If resume has "built ML features" and job wants "RAG", reframe as "Built ML features incorporating retrieval-augmented generation patterns" if the work actually involved retrieval patterns
    - Make keywords feel AUTHENTIC and SUPPORTED by actual work - recruiters should see evidence, not just keyword mentions
    - Use natural, professional language - keywords should flow naturally in sentences
-7. Keep personal information (name, contact, address) exactly as provided
-8. Preserve ALL sections, skills, experience, and projects - nothing should be missing
-9. DO NOT add new skills, experiences, or qualifications that are not in the original resume
-10. DO NOT enhance or expand beyond what is explicitly stated in the resume
-11. Your job is to rephrase and reorganize to naturally demonstrate existing keywords, not to add new content
-11. CRITICAL: IDENTIFY AND IGNORE NOISE WORDS - Use your intelligence to distinguish meaningful keywords from noise:
+8. EXPERIENCE AUTHENTICITY (STRICT MODE):
+   - Do NOT change years of experience, employment dates, or job titles
+   - Do NOT upgrade or downgrade seniority; keep the original level implied by the resume
+   - Improve clarity and alignment without changing responsibility level or scope
+9. Keep personal information (name, contact, address) exactly as provided
+10. Preserve ALL sections, skills, experience, and projects - nothing should be missing
+11. DO NOT add new skills, experiences, or qualifications that are not in the original resume
+12. DO NOT enhance or expand beyond what is explicitly stated in the resume
+13. Your job is to rephrase and reorganize to naturally demonstrate existing keywords, not to add new content
+14. CRITICAL: IDENTIFY AND IGNORE NOISE WORDS - Use your intelligence to distinguish meaningful keywords from noise:
     MEANINGFUL KEYWORDS (include if in original resume):
     - Skills, competencies, abilities (e.g., "project management", "data analysis", "customer service", "Python", "Salesforce")
     - Tools, software, platforms (e.g., "Excel", "Tableau", "AWS", "Figma", "SAP")

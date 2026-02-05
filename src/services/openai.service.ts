@@ -2,32 +2,39 @@ import OpenAI from 'openai';
 import logger from '../utils/logger';
 import { ParsedResumeContent, TailoredResumeData } from '../types';
 
-type TailoringMeta = {
-  roleSeniority: 'intern' | 'junior' | 'mid' | 'senior' | 'staff';
-  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
-  keywords: string[];
-  resumeSummary: string;
-  experienceBullets: { role: string; company?: string; bullets: string[] }[];
-  skills: string[];
-};
+type TailorMode = 'strict' | 'flexible' | 'custom';
 
-type KeywordPatchResult = {
-  result: TailoredResumeData;
+interface TailoredSections {
+  summary?: string;
+  experience?: Array<{
+    role?: string;
+    company?: string;
+    location?: string;
+    period?: string;
+    bullets?: string[];
+  }>;
+  skills?: string[];
+  coverLetter?: string;
+}
+
+interface TailorSectionsInput {
+  resumeContent: ParsedResumeContent;
+  jobDescription: string;
+  jobKeywords: string[];
+  roleLevel: 'intern' | 'junior' | 'mid' | 'senior' | 'staff';
+  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+  generateFreely: boolean;
+  customInstructions?: string;
+}
+
+interface KeywordPatchResult {
+  structured: NonNullable<TailoredResumeData['structured']>;
   missingKeywords: string[];
-  addedKeywords: string[];
-};
+}
 
 export class OpenAIService {
   private client: OpenAI;
   private baseUrl = 'https://api.openai.com/v1';
-
-  private static readonly DEFAULT_SKILLS_SHAPE = {
-    languages: [],
-    frameworks: [],
-    devops: [],
-    databases: [],
-    other: [],
-  };
 
   constructor() {
     const apiKey = process.env.OPENAI_API_KEY;
@@ -55,178 +62,74 @@ export class OpenAIService {
       const formatStartTime = Date.now();
       const rawResumeText = this.formatResumeContent(resumeContent);
       
-      // Rough keyword extraction for compacting inputs
-      const roughKeywords = this.extractImportantKeywords(jobDescription);
+      // Extract keywords from job description for better matching
+      const jobKeywords = this.extractImportantKeywords(jobDescription);
       const isCustomModeForCompact = !!(customInstructions && customInstructions.trim().length > 0);
-      const resumeText = this.compactResumeText(rawResumeText, roughKeywords, { maxLength: isCustomModeForCompact ? 10000 : 8000 });
-      const compactJobDescription = this.compactJobDescription(jobDescription, roughKeywords, { maxLength: isCustomModeForCompact ? 4000 : 3000 });
-
-      // Stage 1: Extract tailoring metadata (keywords, seniority, risk)
-      const extractStartTime = Date.now();
-      const meta = await this.extractTailoringMeta(resumeText, compactJobDescription);
-      const extractTime = Date.now();
-      logger.info('Tailor pipeline: metadata extracted', {
-        duration_ms: extractTime - extractStartTime,
-        keyword_count: meta.keywords.length,
-        role_seniority: meta.roleSeniority,
-        risk_level: meta.riskLevel,
-      });
-
-      const jobKeywords = meta.keywords.length >= 10 ? meta.keywords : roughKeywords;
-      if (meta.keywords.length < 10 && roughKeywords.length > 0) {
-        logger.warn('Tailor pipeline: falling back to heuristic keywords', {
-          extracted_count: meta.keywords.length,
-          fallback_count: roughKeywords.length,
-        });
-      }
+      const resumeText = this.compactResumeText(rawResumeText, jobKeywords, { maxLength: isCustomModeForCompact ? 10000 : 8000 });
+      const compactJobDescription = this.compactJobDescription(jobDescription, jobKeywords, { maxLength: isCustomModeForCompact ? 4000 : 3000 });
       
       // Detect role level for seniority-aware language
-      const roleLevel = meta.roleSeniority || this.detectRoleLevel(jobDescription);
-      const riskLevel = meta.riskLevel || this.getFabricationRiskLevel(jobDescription);
+      const roleLevel = this.detectRoleLevel(jobDescription);
       const seniorityRules = this.getSeniorityLanguageRules(roleLevel);
+      const riskLevel = this.getFabricationRiskLevel(jobDescription);
       
       logger.info('Role level detected', {
         role_level: roleLevel,
         seniority_rules: seniorityRules,
       });
-      
-      const prompt = this.buildTailoringPrompt(resumeText, compactJobDescription, generateFreely, jobKeywords, roleLevel, seniorityRules, customInstructions);
 
       const formatTime = Date.now();
-      logger.info('OpenAI: Resume formatted and prompt built', {
+      logger.info('OpenAI: Resume formatted and pipeline prepared', {
         duration_ms: formatTime - formatStartTime,
         resume_text_length: resumeText.length,
         resume_text_original_length: rawResumeText.length,
         job_description_length: compactJobDescription.length,
         job_description_original_length: jobDescription.length,
-        prompt_length: prompt.length,
         has_custom_instructions: !!customInstructions && customInstructions.length > 0,
       });
 
-      // Call OpenAI API
-      const apiStartTime = Date.now();
-      logger.info('OpenAI: Making API request', {
-        model: 'gpt-4o-mini',
-        base_url: this.baseUrl,
-        elapsed_ms: apiStartTime - serviceStartTime,
-        custom_mode: !!customInstructions && customInstructions.length > 0,
-      });
-
-      // Build compact system message based on mode (custom / flexible / strict)
-      let systemMessage: string;
-      if (customInstructions && customInstructions.trim().length > 0) {
-        // Custom mode: user instructions are top priority and model has freedom to modify content
-        systemMessage = [
-          "You are an expert resume writer.",
-          "- Follow the user's custom instructions as the top priority.",
-          "- Use the provided resume and job description as context.",
-          "- You may add, remove, or change content to satisfy the user's request while keeping it believable and professional.",
-          "- Output only valid JSON in the requested schema.",
-        ].join('\n');
-      } else if (generateFreely) {
-        // Flexible mode: improve match, can add reasonable content consistent with background
-        systemMessage = [
-          "You are an expert resume writer.",
-          "- Improve alignment between the resume and the job description.",
-          "- You may add reasonable skills or phrases that are consistent with the candidate's background.",
-          "- Keep the resume believable, professional, and coherent.",
-          "- Output only valid JSON in the requested schema.",
-        ].join('\n');
-      } else {
-        // Strict mode: rephrase/reorder only, no new skills/experience
-        systemMessage = [
-          "You are an expert resume writer.",
-          "- Do NOT add any skills or experience that are not present in the original resume.",
-          "- Only rephrase, reorganize, or lightly emphasize existing content to better match the job description.",
-          "- Preserve factual accuracy at all times.",
-          "- Output only valid JSON in the requested schema.",
-        ].join('\n');
-      }
-
-      // Use higher temperature and more tokens for custom mode to allow more creative/free generation
-      const isCustomMode = !!(customInstructions && customInstructions.trim().length > 0);
-      const temperature = isCustomMode ? 0.9 : 0.7; // Higher temperature for more creative/free generation in custom mode
-      const maxTokens = isCustomMode ? 3000 : 2000; // More tokens for comprehensive resumes with all keywords
-
-      const response = await this.client.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: systemMessage,
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        temperature: temperature,
-        max_tokens: maxTokens,
-        response_format: { type: 'json_object' },
-      });
-
-      const apiTime = Date.now();
-      logger.info('OpenAI: API response received', {
-        duration_ms: apiTime - apiStartTime,
-        elapsed_ms: apiTime - serviceStartTime,
-      });
-
-      const content = response.choices[0]?.message?.content || '';
-
-      logger.info('OpenAI: Full AI response received', {
-        generate_freely: generateFreely,
-        custom_mode: !!(customInstructions && customInstructions.trim().length > 0),
-        mode: customInstructions && customInstructions.trim().length > 0
-          ? 'custom'
-          : generateFreely
-            ? 'flexible'
-            : 'strict',
-        response_length: content.length,
-      });
-
-      // Parse the response
-      const parseStartTime = Date.now();
-      const parsedResult = this.parseAIResponse(content);
-      const parseTime = Date.now();
-      const totalServiceTime = Date.now();
-
-      logger.info('OpenAI: Response parsed and completed', {
-        parse_duration_ms: parseTime - parseStartTime,
-        response_length: content.length,
-        total_duration_ms: totalServiceTime - serviceStartTime,
-        total_duration_seconds: (totalServiceTime - serviceStartTime) / 1000,
-        breakdown: {
-          format_ms: formatTime - formatStartTime,
-          extract_ms: extractTime - extractStartTime,
-          api_call_ms: apiTime - apiStartTime,
-          parse_ms: parseTime - parseStartTime,
-        },
-      });
-
-      // Stage 3: Verify and patch missing keywords (if allowed)
-      const verifyStartTime = Date.now();
-      const patchedResult = this.verifyAndPatchKeywords(
-        parsedResult,
+      const tailoringStartTime = Date.now();
+      const tailoredSections = await this.tailorSectionsWithOpenAI({
+        resumeContent,
+        jobDescription: compactJobDescription,
         jobKeywords,
+        roleLevel,
+        riskLevel,
         generateFreely,
-        !!(customInstructions && customInstructions.trim().length > 0),
-        meta.riskLevel
-      );
-      const verifyTime = Date.now();
+        customInstructions,
+      });
+      const tailoringEndTime = Date.now();
 
-      logger.info('Tailor pipeline: keyword verification completed', {
-        duration_ms: verifyTime - verifyStartTime,
-        missing_keywords_count: patchedResult.missingKeywords.length,
-        added_keywords_count: patchedResult.addedKeywords.length,
+      logger.info('OpenAI: Section tailoring completed', {
+        duration_ms: tailoringEndTime - tailoringStartTime,
+        elapsed_ms: tailoringEndTime - serviceStartTime,
+      });
+
+      const mergeStartTime = Date.now();
+      const baseStructured = this.buildBaseStructuredResume(resumeContent);
+      const mergedStructured = this.mergeTailoredSections(baseStructured, tailoredSections);
+      const patched = this.verifyAndPatchKeywords(mergedStructured, jobKeywords, {
         mode: customInstructions && customInstructions.trim().length > 0
           ? 'custom'
           : generateFreely
             ? 'flexible'
             : 'strict',
-        risk_level: meta.riskLevel,
+        riskLevel,
+      });
+      const fullResume = this.generatePlainTextResume(patched.structured);
+      const mergeEndTime = Date.now();
+
+      logger.info('Resume merge and keyword patch completed', {
+        duration_ms: mergeEndTime - mergeStartTime,
+        elapsed_ms: mergeEndTime - serviceStartTime,
+        missing_keywords: patched.missingKeywords.length,
       });
 
-      return patchedResult.result;
+      return {
+        structured: patched.structured,
+        coverLetter: tailoredSections.coverLetter,
+        fullResume,
+      };
     } catch (error: any) {
       logger.error('OpenAI Service Error:', error);
       throw error;
@@ -1930,6 +1833,335 @@ IMPORTANT:
     };
   }
 
+  private buildBaseStructuredResume(resumeContent: ParsedResumeContent): NonNullable<TailoredResumeData['structured']> {
+    return {
+      header: resumeContent.header
+        ? {
+            name: resumeContent.header.name,
+            contact: {
+              phone: resumeContent.header.phone,
+              email: resumeContent.header.email,
+              linkedin: resumeContent.header.linkedin,
+              github: resumeContent.header.github,
+              location: resumeContent.header.location,
+            },
+          }
+        : undefined,
+      summary: resumeContent.summary,
+      education: resumeContent.education,
+      experience: (resumeContent.experience || []).map(exp => ({
+        role: exp.role || exp.title,
+        company: exp.company,
+        location: exp.location,
+        period: exp.period,
+        bullets: exp.bullets || [],
+      })),
+      skills: resumeContent.skills && resumeContent.skills.length > 0
+        ? { other: resumeContent.skills }
+        : undefined,
+    };
+  }
+
+  private mergeTailoredSections(
+    base: NonNullable<TailoredResumeData['structured']>,
+    tailored: TailoredSections
+  ): NonNullable<TailoredResumeData['structured']> {
+    const mergedExperience = base.experience && base.experience.length > 0
+      ? base.experience.map((exp, index) => {
+          const tailoredExp = tailored.experience?.[index];
+          return {
+            ...exp,
+            bullets: tailoredExp?.bullets && tailoredExp.bullets.length > 0
+              ? tailoredExp.bullets
+              : exp.bullets,
+          };
+        })
+      : tailored.experience;
+
+    const mergedSkills = tailored.skills && tailored.skills.length > 0
+      ? { ...base.skills, other: tailored.skills }
+      : base.skills;
+
+    return {
+      ...base,
+      summary: tailored.summary || base.summary,
+      experience: mergedExperience || base.experience,
+      skills: mergedSkills,
+    };
+  }
+
+  private async tailorSectionsWithOpenAI(input: TailorSectionsInput): Promise<TailoredSections> {
+    const {
+      resumeContent,
+      jobDescription,
+      jobKeywords,
+      roleLevel,
+      riskLevel,
+      generateFreely,
+      customInstructions,
+    } = input;
+
+    const mode: TailorMode = customInstructions && customInstructions.trim().length > 0
+      ? 'custom'
+      : generateFreely
+        ? 'flexible'
+        : 'strict';
+
+    const resumeSummary = resumeContent.summary || '';
+    const experience = (resumeContent.experience || []).map(exp => ({
+      role: exp.role || exp.title,
+      company: exp.company,
+      location: exp.location,
+      period: exp.period,
+      bullets: exp.bullets || [],
+    }));
+    const skills = resumeContent.skills || [];
+
+    const prompt = this.buildSectionTailoringPrompt({
+      resumeSummary,
+      experience,
+      skills,
+      jobDescription,
+      jobKeywords,
+      roleLevel,
+      riskLevel,
+      mode,
+      customInstructions,
+    });
+
+    logger.info('OpenAI: Making section tailoring request', {
+      model: 'gpt-4o-mini',
+      base_url: this.baseUrl,
+      mode,
+      risk_level: riskLevel,
+      prompt_length: prompt.length,
+    });
+
+    const apiStartTime = Date.now();
+    const response = await this.client.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: "You are an expert resume writer. Output only valid JSON in the requested schema.",
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      temperature: mode === 'custom' ? 0.9 : 0.6,
+      max_tokens: mode === 'custom' ? 2000 : 1500,
+      response_format: { type: 'json_object' },
+    });
+
+    const apiTime = Date.now();
+    logger.info('OpenAI: Section tailoring response received', {
+      duration_ms: apiTime - apiStartTime,
+    });
+
+    const content = response.choices[0]?.message?.content || '';
+    return this.parseSectionsResponse(content, {
+      summaryFallback: resumeSummary,
+      experienceFallback: experience,
+      skillsFallback: skills,
+    });
+  }
+
+  private buildSectionTailoringPrompt(input: {
+    resumeSummary: string;
+    experience: Array<{
+      role?: string;
+      company?: string;
+      location?: string;
+      period?: string;
+      bullets?: string[];
+    }>;
+    skills: string[];
+    jobDescription: string;
+    jobKeywords: string[];
+    roleLevel: 'intern' | 'junior' | 'mid' | 'senior' | 'staff';
+    riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+    mode: TailorMode;
+    customInstructions?: string;
+  }): string {
+    const {
+      resumeSummary,
+      experience,
+      skills,
+      jobDescription,
+      jobKeywords,
+      roleLevel,
+      riskLevel,
+      mode,
+      customInstructions,
+    } = input;
+
+    const keywords = jobKeywords.slice(0, 60);
+    const modeHeader = mode === 'custom'
+      ? 'CUSTOM MODE (user instructions are absolute priority)'
+      : mode === 'flexible'
+        ? 'FLEXIBLE MODE (smart match)'
+        : 'STRICT MODE (no new content)';
+
+    const modeRules = mode === 'custom'
+      ? `- Follow the user's instructions EXACTLY.
+- You may add or change content as requested, but keep it believable and professional.`
+      : mode === 'flexible'
+        ? `- Maximize alignment while keeping credibility.
+- You MAY add adjacent, low-risk keywords to the SKILLS list.
+- Keep dates and titles factually consistent.`
+        : `- Do NOT add new skills or experiences.
+- Only rephrase existing content to improve alignment.`;
+
+    const riskRules = riskLevel === 'HIGH'
+      ? `HIGH CONSEQUENCE ROLE:
+- Do NOT add credentials, licenses, or regulated responsibilities.
+- Reframe wording for alignment without changing scope.
+- You may add low-risk soft skills to SKILLS if reasonable.`
+      : riskLevel === 'MEDIUM'
+        ? `MEDIUM CONSEQUENCE ROLE:
+- Prefer rephrasing over adding.
+- No certifications or regulated responsibilities.`
+        : '';
+
+    return `You are tailoring resume sections. Output ONLY valid JSON.
+
+${modeHeader}
+TARGET ROLE SENIORITY: ${roleLevel.toUpperCase()}
+${modeRules}
+${riskRules}
+
+RESUME SUMMARY:
+${resumeSummary || 'N/A'}
+
+EXPERIENCE (JSON):
+${JSON.stringify(experience, null, 2)}
+
+SKILLS (JSON array):
+${JSON.stringify(skills, null, 2)}
+
+JOB DESCRIPTION:
+${jobDescription}
+
+KEYWORDS (use only if relevant):
+${keywords.join(', ')}
+
+${mode === 'custom' && customInstructions ? `USER INSTRUCTIONS:\n${customInstructions}\n` : ''}
+
+Return JSON in this exact format:
+{
+  "summary": "Updated summary",
+  "experience": [
+    { "role": "...", "company": "...", "location": "...", "period": "...", "bullets": ["...", "..."] }
+  ],
+  "skills": ["skill1", "skill2"],
+  "coverLetter": "Full cover letter text"
+}`;
+  }
+
+  private parseSectionsResponse(
+    content: string,
+    fallback: { summaryFallback: string; experienceFallback: TailoredSections['experience']; skillsFallback: string[] }
+  ): TailoredSections {
+    let cleaned = content.trim();
+    cleaned = cleaned.replace(/```json\n?/gi, '');
+    cleaned = cleaned.replace(/```\n?/g, '');
+
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        const json = JSON.parse(jsonMatch[0]);
+        return {
+          summary: typeof json.summary === 'string' ? json.summary : fallback.summaryFallback,
+          experience: Array.isArray(json.experience) ? json.experience : fallback.experienceFallback,
+          skills: Array.isArray(json.skills) ? json.skills : fallback.skillsFallback,
+          coverLetter: typeof json.coverLetter === 'string' ? json.coverLetter : '',
+        };
+      } catch (e) {
+        logger.error('Failed to parse section JSON from AI response', { error: e });
+      }
+    }
+
+    return {
+      summary: fallback.summaryFallback,
+      experience: fallback.experienceFallback,
+      skills: fallback.skillsFallback,
+      coverLetter: '',
+    };
+  }
+
+  private verifyAndPatchKeywords(
+    structured: NonNullable<TailoredResumeData['structured']>,
+    jobKeywords: string[],
+    options: { mode: TailorMode; riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' }
+  ): KeywordPatchResult {
+    const { mode, riskLevel } = options;
+    const textChunks: string[] = [];
+
+    if (structured.summary) textChunks.push(structured.summary);
+    if (structured.experience) {
+      for (const exp of structured.experience) {
+        if (exp.bullets) textChunks.push(...exp.bullets);
+      }
+    }
+    if (structured.skills?.other) textChunks.push(...structured.skills.other);
+
+    const joined = textChunks.join(' ').toLowerCase();
+    const missing = jobKeywords.filter(keyword => !joined.includes(keyword.toLowerCase()));
+
+    if (mode === 'strict' || missing.length === 0) {
+      return { structured, missingKeywords: missing };
+    }
+
+    const patchedSkills = structured.skills?.other ? [...structured.skills.other] : [];
+    const missingKeywords: string[] = [];
+
+    for (const keyword of missing) {
+      if (riskLevel !== 'LOW' && this.isRegulatedKeyword(keyword)) {
+        missingKeywords.push(keyword);
+        continue;
+      }
+      patchedSkills.push(keyword);
+    }
+
+    const dedupedSkills = Array.from(new Set(patchedSkills));
+
+    return {
+      structured: {
+        ...structured,
+        skills: {
+          ...(structured.skills || {}),
+          other: dedupedSkills,
+        },
+      },
+      missingKeywords,
+    };
+  }
+
+  private isRegulatedKeyword(keyword: string): boolean {
+    const lower = keyword.toLowerCase();
+    const patterns = [
+      'license',
+      'licensed',
+      'certified',
+      'certification',
+      'registered',
+      'board certified',
+      'rn',
+      'lpn',
+      'pmp',
+      'cpa',
+      'md',
+      'doctor',
+      'pharmacist',
+      'medical license',
+      'bar admitted',
+    ];
+
+    return patterns.some(pattern => lower.includes(pattern));
+  }
+
   private getFabricationRiskLevel(jobDescription: string): 'LOW' | 'MEDIUM' | 'HIGH' {
     const text = jobDescription.toLowerCase();
     const highRiskSignals = [
@@ -1982,174 +2214,6 @@ IMPORTANT:
     if (highRiskSignals.some(keyword => text.includes(keyword))) return 'HIGH';
     if (mediumRiskSignals.some(keyword => text.includes(keyword))) return 'MEDIUM';
     return 'LOW';
-  }
-
-  private parseJsonObject(content: string): any | null {
-    let cleaned = content.trim();
-    cleaned = cleaned.replace(/```json\n?/gi, '');
-    cleaned = cleaned.replace(/```\n?/g, '');
-    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return null;
-    }
-    try {
-      return JSON.parse(jsonMatch[0]);
-    } catch {
-      return null;
-    }
-  }
-
-  private async extractTailoringMeta(
-    resumeText: string,
-    jobDescription: string
-  ): Promise<TailoringMeta> {
-    const startTime = Date.now();
-    const prompt = `You are extracting structured info. Return JSON only.
-
-TASKS:
-1) Extract 40-80 job keywords that are actual skills/tools/methodologies (no dates, locations, or boilerplate).
-2) Extract resume summary text if present.
-3) Extract experience bullets by role (include role title and bullets).
-4) Extract a flat skills list from resume if present.
-5) Detect role seniority: intern | junior | mid | senior | staff.
-6) Detect fabrication risk level: LOW | MEDIUM | HIGH based on regulated, safety, or legal responsibility language.
-
-RESUME:
-${resumeText}
-
-JOB DESCRIPTION:
-${jobDescription}
-
-OUTPUT JSON:
-{
-  "roleSeniority": "junior",
-  "riskLevel": "LOW",
-  "keywords": ["keyword 1", "keyword 2"],
-  "resumeSummary": "text or empty",
-  "experienceBullets": [
-    { "role": "Role title", "company": "Company (optional)", "bullets": ["bullet 1", "bullet 2"] }
-  ],
-  "skills": ["skill 1", "skill 2"]
-}`;
-
-    const response = await this.client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: 'You are a precise extractor. Output only valid JSON.' },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.2,
-      max_tokens: 1200,
-      response_format: { type: 'json_object' },
-    });
-    const apiTime = Date.now();
-    logger.info('Tailor pipeline: extraction API completed', {
-      duration_ms: apiTime - startTime,
-    });
-
-    const content = response.choices[0]?.message?.content || '';
-    const parsed = this.parseJsonObject(content);
-
-    if (!parsed) {
-      return {
-        roleSeniority: 'mid',
-        riskLevel: 'LOW',
-        keywords: [],
-        resumeSummary: '',
-        experienceBullets: [],
-        skills: [],
-      };
-    }
-
-    const roleSeniority = ['intern', 'junior', 'mid', 'senior', 'staff'].includes(parsed.roleSeniority)
-      ? parsed.roleSeniority
-      : 'mid';
-    const riskLevel = ['LOW', 'MEDIUM', 'HIGH'].includes(parsed.riskLevel)
-      ? parsed.riskLevel
-      : 'LOW';
-
-    return {
-      roleSeniority,
-      riskLevel,
-      keywords: Array.isArray(parsed.keywords) ? parsed.keywords.filter((kw: any) => typeof kw === 'string') : [],
-      resumeSummary: typeof parsed.resumeSummary === 'string' ? parsed.resumeSummary : '',
-      experienceBullets: Array.isArray(parsed.experienceBullets) ? parsed.experienceBullets : [],
-      skills: Array.isArray(parsed.skills) ? parsed.skills.filter((kw: any) => typeof kw === 'string') : [],
-    };
-  }
-
-  private verifyAndPatchKeywords(
-    parsedResult: TailoredResumeData,
-    jobKeywords: string[],
-    generateFreely: boolean,
-    isCustomMode: boolean,
-    riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'
-  ): KeywordPatchResult {
-    if (!parsedResult?.structured) {
-      return {
-        result: parsedResult,
-        missingKeywords: [],
-        addedKeywords: [],
-      };
-    }
-
-    const resumeText = this.generatePlainTextResume(parsedResult.structured);
-    const resumeLower = resumeText.toLowerCase();
-    const missingKeywords = jobKeywords.filter(keyword => {
-      if (!keyword || typeof keyword !== 'string') return false;
-      return !resumeLower.includes(keyword.toLowerCase());
-    });
-
-    if (!generateFreely && !isCustomMode) {
-      return { result: parsedResult, missingKeywords, addedKeywords: [] };
-    }
-
-    if (riskLevel === 'HIGH') {
-      return { result: parsedResult, missingKeywords, addedKeywords: [] };
-    }
-
-    const safeKeywords = missingKeywords.filter(keyword => this.isLikelySkillKeyword(keyword));
-    if (safeKeywords.length === 0) {
-      return { result: parsedResult, missingKeywords, addedKeywords: [] };
-    }
-
-    const structured = parsedResult.structured || {};
-    structured.skills = structured.skills || { ...OpenAIService.DEFAULT_SKILLS_SHAPE };
-    if (!structured.skills.other) {
-      structured.skills.other = [];
-    }
-
-    const existingSkills = new Set(
-      ([] as string[])
-        .concat(structured.skills.languages || [])
-        .concat(structured.skills.frameworks || [])
-        .concat(structured.skills.devops || [])
-        .concat(structured.skills.databases || [])
-        .concat(structured.skills.other || [])
-        .map(skill => skill.toLowerCase())
-    );
-
-    const addedKeywords: string[] = [];
-    for (const keyword of safeKeywords) {
-      const key = keyword.toLowerCase();
-      if (!existingSkills.has(key)) {
-        structured.skills.other.push(keyword);
-        existingSkills.add(key);
-        addedKeywords.push(keyword);
-      }
-    }
-
-    const updatedResult: TailoredResumeData = {
-      ...parsedResult,
-      structured,
-      fullResume: this.generatePlainTextResume(structured),
-    };
-
-    return {
-      result: updatedResult,
-      missingKeywords,
-      addedKeywords,
-    };
   }
 
   private generatePlainTextResume(structured: any): string {

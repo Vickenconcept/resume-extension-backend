@@ -1863,6 +1863,12 @@ IMPORTANT:
 
   private generatePlainTextResume(structured: any): string {
     let text = '';
+    const hasNonEmptyString = (value: any) =>
+      typeof value === 'string' && value.trim().length > 0;
+    const hasAnyNonEmptyString = (values?: any[]) =>
+      Array.isArray(values) && values.some(value => hasNonEmptyString(value));
+    const compactTextLine = (value: any) =>
+      hasNonEmptyString(value) ? value.trim() : '';
 
     // Header
     if (structured.header) {
@@ -1884,108 +1890,168 @@ IMPORTANT:
     }
 
     // Summary
-    if (structured.summary) {
+    if (hasNonEmptyString(structured.summary)) {
       text += 'PROFESSIONAL SUMMARY\n';
-      text += structured.summary + '\n\n';
+      text += structured.summary.trim() + '\n\n';
     }
 
     // Education
     if (structured.education && Array.isArray(structured.education)) {
-      text += 'EDUCATION\n';
+      const educationLines: string[] = [];
       for (const edu of structured.education) {
         const parts: string[] = [];
-        if (edu.degree) parts.push(edu.degree);
-        if (edu.school) parts.push(edu.school);
-        if (edu.location) parts.push(edu.location);
-        if (edu.year) parts.push(edu.year);
-        text += parts.join(' | ') + '\n';
+        if (hasNonEmptyString(edu.degree)) parts.push(edu.degree.trim());
+        if (hasNonEmptyString(edu.school)) parts.push(edu.school.trim());
+        if (hasNonEmptyString(edu.location)) parts.push(edu.location.trim());
+        if (hasNonEmptyString(edu.year)) parts.push(edu.year.trim());
+        const line = parts.join(' | ').trim();
+        if (line) {
+          educationLines.push(line);
+        }
       }
-      text += '\n';
+      if (educationLines.length > 0) {
+        text += 'EDUCATION\n';
+        text += educationLines.join('\n') + '\n\n';
+      }
     }
 
     // Skills
     if (structured.skills) {
-      text += 'TECHNICAL SKILL\n';
       const skills = structured.skills;
+      const hasLanguages = hasAnyNonEmptyString(skills.languages);
+      const hasFrameworks = hasAnyNonEmptyString(skills.frameworks);
+      const hasDevops = hasAnyNonEmptyString(skills.devops);
+      const hasDatabases = hasAnyNonEmptyString(skills.databases);
+      const hasOther = hasAnyNonEmptyString(skills.other);
 
-      if (skills.languages && skills.languages.length > 0) {
+      if (hasLanguages || hasFrameworks || hasDevops || hasDatabases || hasOther) {
+        text += 'TECHNICAL SKILL\n';
+      }
+
+      if (hasLanguages) {
         text += 'Languages & Frameworks\n';
         for (const skill of skills.languages) {
-          text += '• ' + skill + '\n';
+          const line = compactTextLine(skill);
+          if (line) {
+            text += '• ' + line + '\n';
+          }
         }
       }
 
-      if (skills.frameworks && skills.frameworks.length > 0) {
+      if (hasFrameworks) {
         for (const skill of skills.frameworks) {
-          text += '• ' + skill + '\n';
+          const line = compactTextLine(skill);
+          if (line) {
+            text += '• ' + line + '\n';
+          }
         }
       }
 
-      if (skills.devops && skills.devops.length > 0) {
+      if (hasDevops) {
         text += 'DevOps & Tools\n';
         for (const skill of skills.devops) {
-          text += '• ' + skill + '\n';
+          const line = compactTextLine(skill);
+          if (line) {
+            text += '• ' + line + '\n';
+          }
         }
       }
 
-      if (skills.databases && skills.databases.length > 0) {
+      if (hasDatabases) {
         text += 'DATABASES\n';
         for (const skill of skills.databases) {
-          text += '• ' + skill + '\n';
+          const line = compactTextLine(skill);
+          if (line) {
+            text += '• ' + line + '\n';
+          }
         }
       }
 
-      if (skills.other && skills.other.length > 0) {
+      if (hasOther) {
         text += 'OTHER SKILLS\n';
         for (const skill of skills.other) {
-          text += '• ' + skill + '\n';
+          const line = compactTextLine(skill);
+          if (line) {
+            text += '• ' + line + '\n';
+          }
         }
       }
-      text += '\n';
+      if (hasLanguages || hasFrameworks || hasDevops || hasDatabases || hasOther) {
+        text += '\n';
+      }
     }
 
     // Experience
     if (structured.experience && Array.isArray(structured.experience)) {
-      text += 'PROFESSIONAL EXPERIENCE\n';
+      const experienceBlocks: string[] = [];
       for (const exp of structured.experience) {
         const titleParts: string[] = [];
-        if (exp.role) titleParts.push(exp.role);
-        if (exp.company) titleParts.push(exp.company);
-        if (exp.location) titleParts.push(exp.location);
-        if (exp.period) titleParts.push(exp.period);
-        text += titleParts.join(' | ') + '\n';
+        if (hasNonEmptyString(exp.role)) titleParts.push(exp.role.trim());
+        if (hasNonEmptyString(exp.company)) titleParts.push(exp.company.trim());
+        if (hasNonEmptyString(exp.location)) titleParts.push(exp.location.trim());
+        if (hasNonEmptyString(exp.period)) titleParts.push(exp.period.trim());
+        const titleLine = titleParts.join(' | ').trim();
 
+        const bulletLines: string[] = [];
         if (exp.bullets && Array.isArray(exp.bullets)) {
           for (const bullet of exp.bullets) {
-            text += '• ' + bullet + '\n';
+            const line = compactTextLine(bullet);
+            if (line) {
+              bulletLines.push('• ' + line);
+            }
           }
         }
-        text += '\n';
+
+        if (titleLine || bulletLines.length > 0) {
+          const blockLines: string[] = [];
+          if (titleLine) blockLines.push(titleLine);
+          blockLines.push(...bulletLines);
+          experienceBlocks.push(blockLines.join('\n'));
+        }
+      }
+      if (experienceBlocks.length > 0) {
+        text += 'PROFESSIONAL EXPERIENCE\n';
+        text += experienceBlocks.join('\n\n') + '\n\n';
       }
     }
 
     // Projects
     if (structured.projects && Array.isArray(structured.projects)) {
-      text += 'PROJECT HIGHLIGHTS\n';
+      const projectLines: string[] = [];
       for (const project of structured.projects) {
-        let projText = project.name || '';
-        if (project.url) {
-          projText += (projText ? ': ' : '') + project.url;
+        const name = compactTextLine(project.name);
+        const url = compactTextLine(project.url);
+        let projText = name;
+        if (url) {
+          projText += (projText ? ': ' : '') + url;
         }
-        text += projText + '\n';
+        if (projText) {
+          projectLines.push(projText);
+        }
       }
-      text += '\n';
+      if (projectLines.length > 0) {
+        text += 'PROJECT HIGHLIGHTS\n';
+        text += projectLines.join('\n') + '\n\n';
+      }
     }
 
     // Languages
     if (structured.languages && Array.isArray(structured.languages)) {
-      text += 'LANGUAGE\n';
+      const languageLines: string[] = [];
       for (const lang of structured.languages) {
-        let langText = lang.language || '';
-        if (lang.proficiency) {
-          langText += (langText ? ' — ' : '') + lang.proficiency;
+        const language = compactTextLine(lang.language);
+        const proficiency = compactTextLine(lang.proficiency);
+        let langText = language;
+        if (proficiency) {
+          langText += (langText ? ' — ' : '') + proficiency;
         }
-        text += langText + '\n';
+        if (langText) {
+          languageLines.push(langText);
+        }
+      }
+      if (languageLines.length > 0) {
+        text += 'LANGUAGE\n';
+        text += languageLines.join('\n') + '\n';
       }
     }
 

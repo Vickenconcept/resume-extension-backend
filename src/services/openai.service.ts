@@ -1579,13 +1579,17 @@ CRITICAL RULES FOR FLEXIBLE MODE (SMART MATCH MODE - HIGH MATCH WITHOUT FAKE EXP
    - If the resume reads overqualified, reduce overly senior verbs ("architected", "owned end-to-end") and emphasize hands-on implementation
    - If the resume reads underqualified, emphasize ownership and scope only when supported by existing work
    - Do NOT claim leadership, authority, or responsibilities that are not supported by the original resume
-${riskLevel === 'HIGH' ? `HIGH CONSEQUENCE ROLE DETECTED — CREDIBILITY OVERRIDES KEYWORD MATCH
+${riskLevel === 'HIGH' ? `HIGH CONSEQUENCE ROLE DETECTED — STRONG ALIGNMENT WITHOUT FABRICATION
 This role involves regulated, safety-critical, or legally sensitive responsibilities.
 CRITICAL RULES:
 - DO NOT invent or add new qualifications, certifications, licenses, or regulated responsibilities
 - DO NOT add experience in environments the candidate has not actually worked in
 - Only REPHRASE and REORGANIZE existing experience to improve alignment
 - Keywords may be used ONLY if they truthfully reflect existing experience
+- ALIGNMENT BOOST (ALLOWED IN HIGH-RISK ROLES):
+  - Aggressively reframe wording to match the job context (e.g., emphasize home care, community support, elderly care, personal guidance) without changing facts
+  - Add low-risk, non-credentialed soft-skill keywords to the SKILLS section if they are reasonable (e.g., teamwork, empathy, patient communication, personal care)
+  - Strengthen summary and bullets to reflect the job’s setting and responsibilities, but keep scope truthful
 ` : riskLevel === 'MEDIUM' ? `MEDIUM CONSEQUENCE ROLE DETECTED — CONSERVATIVE ENHANCEMENT
 CRITICAL RULES:
 - Prefer rephrasing and alignment over additions

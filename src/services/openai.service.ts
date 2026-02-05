@@ -1681,28 +1681,29 @@ MANDATORY REQUIREMENTS FOR FLEXIBLE MODE (SMART MATCH):
 ⚠️ DOMAIN-AGNOSTIC INSTRUCTION: This app works for ALL job types (software engineering, healthcare, finance, marketing, sales, operations, etc.). Ignore any non-skill keywords like dates, locations, company names, application instructions, or posting metadata. Only treat as important if they are actual required skills/tools/qualifications. Use semantic understanding to distinguish real skills from job posting boilerplate.
 TARGET ROLE SENIORITY: ${roleLevel.toUpperCase()}
 
-CRITICAL RULES FOR STRICT MODE (LIGHT TAILORING MODE - CONSERVATIVE):
+CRITICAL RULES FOR STRICT MODE (PROFESSIONAL REWRITE MODE - DEFAULT):
 1. ONLY use information from the provided resume - do not invent or add any experience, skills, achievements, education, or personal details that are not present
-2. LIGHT TAILORING: Rephrase and emphasize existing content to align with the job description - make subtle adjustments, not major changes
-3. Use measurable language (numbers, percentages, metrics) where available in the original resume
-4. Match the language and terminology used in the job description - but ONLY for keywords that already exist in the original resume (or are clear synonyms)
-5. Focus on ATS (Applicant Tracking System) optimization by using keywords from the job description that match existing resume content - this is about alignment, not addition
-6. CONSERVATIVE APPROACH: This mode is for light tailoring only - preserve the original resume's tone and content, just make it more aligned with the job description
-7. NATURAL REFRAMING FOR CREDIBILITY:
+2. PROFESSIONAL REWRITE: Rewrite summary and experience bullets to be clear, concise, and role-relevant
+3. Remove fluff and generic wording; prioritize what matters for this role
+4. Use measurable language (numbers, percentages, metrics) where available in the original resume
+5. Match the language and terminology used in the job description - but ONLY for keywords that already exist in the original resume (or are clear synonyms)
+6. Focus on recruiter readability first; ATS alignment is secondary to clarity and credibility
+7. Preserve the original scope of responsibilities; do NOT add new skills or duties
+8. NATURAL REFRAMING FOR CREDIBILITY:
    - REFRAME experience bullets to naturally demonstrate keywords through actual work described
    - Example: If resume has "built ML features" and job wants "RAG", reframe as "Built ML features incorporating retrieval-augmented generation patterns" if the work actually involved retrieval patterns
    - Make keywords feel AUTHENTIC and SUPPORTED by actual work - recruiters should see evidence, not just keyword mentions
    - Use natural, professional language - keywords should flow naturally in sentences
-8. EXPERIENCE AUTHENTICITY (STRICT MODE):
+9. EXPERIENCE AUTHENTICITY (STRICT MODE):
    - Do NOT change years of experience, employment dates, or job titles
    - Do NOT upgrade or downgrade seniority; keep the original level implied by the resume
    - Improve clarity and alignment without changing responsibility level or scope
-9. Keep personal information (name, contact, address) exactly as provided
-10. Preserve ALL sections, skills, experience, and projects - nothing should be missing
-11. DO NOT add new skills, experiences, or qualifications that are not in the original resume
-12. DO NOT enhance or expand beyond what is explicitly stated in the resume
-13. Your job is to rephrase and reorganize to naturally demonstrate existing keywords, not to add new content
-14. CRITICAL: IDENTIFY AND IGNORE NOISE WORDS - Use your intelligence to distinguish meaningful keywords from noise:
+10. Keep personal information (name, contact, address) exactly as provided
+11. Preserve ALL sections, skills, experience, and projects - nothing should be missing
+12. DO NOT add new skills, experiences, or qualifications that are not in the original resume
+13. DO NOT enhance or expand beyond what is explicitly stated in the resume
+14. Your job is to rewrite and reorganize to highlight relevance and professionalism, not to add new content
+15. CRITICAL: IDENTIFY AND IGNORE NOISE WORDS - Use your intelligence to distinguish meaningful keywords from noise:
     MEANINGFUL KEYWORDS (include if in original resume):
     - Skills, competencies, abilities (e.g., "project management", "data analysis", "customer service", "Python", "Salesforce")
     - Tools, software, platforms (e.g., "Excel", "Tableau", "AWS", "Figma", "SAP")

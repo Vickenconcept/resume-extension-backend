@@ -1419,6 +1419,7 @@ MANDATORY REQUIREMENTS:
     customInstructions?: string
   ): string {
     const rules = seniorityRules || this.getSeniorityLanguageRules(roleLevel);
+    const riskLevel = this.getFabricationRiskLevel(jobDescription);
     
     // If custom instructions are provided, use them as the primary guidance
     if (customInstructions && customInstructions.trim().length > 0) {
@@ -1537,66 +1538,54 @@ MANDATORY REQUIREMENTS FOR CUSTOM MODE:
     }
     
     if (generateFreely) {
+      logger.info('Fabrication risk level detected', {
+        riskLevel,
+        mode: 'flexible',
+      });
+
       return `You are helping a job seeker tailor their resume to a specific job description and generate a professional cover letter.
 
 ⚠️ DOMAIN-AGNOSTIC INSTRUCTION: This app works for ALL job types (software engineering, healthcare, finance, marketing, sales, operations, etc.). Ignore any non-skill keywords like dates, locations, company names, application instructions, or posting metadata. Only treat as important if they are actual required skills/tools/qualifications. Use semantic understanding to distinguish real skills from job posting boilerplate.
 
-CRITICAL RULES FOR FLEXIBLE MODE (100% MATCH MODE - TARGET 100% KEYWORD INCLUSION):
-1. YOUR PRIMARY GOAL: Achieve 100% keyword match - include EVERY high-impact keyword from the job description. NO EXCEPTIONS. The resume MUST include ALL skills, tools, technologies, and methodologies mentioned in the job description. This is MANDATORY for ATS optimization.
-2. AGGRESSIVE SEMANTIC MATCHING STRATEGY:
+CRITICAL RULES FOR FLEXIBLE MODE (SMART MATCH MODE - HIGH MATCH WITHOUT FAKE EXPERIENCE):
+1. YOUR PRIMARY GOAL: Maximize ATS keyword alignment while keeping the resume credible to a human recruiter.
+2. SEMANTIC MATCHING STRATEGY:
    - Include high-impact keywords: skills, tools, technologies, certifications, methodologies
    - Use semantic synonyms: "hardware engineering" = "electronic design", "cloud computing" = "AWS/Azure/GCP"
    - Match concepts, not just words: "team leadership" matches "managed team" or "led team"
    - IGNORE noise: filler words, dates, locations, job board boilerplate ("posted", "apply", "weeks ago")
-3. BASE everything on the user's actual resume, but ENHANCE aggressively:
-   - If the job requires a skill/tool that's not in the resume, ADD it to the skills section (you can infer the user likely has exposure to it based on their background)
-   - If the job requires experience with something not explicitly mentioned, ADD it to relevant experience bullets
-   - If the user has similar experience, REFRAME it to match exactly what the job requires
-4. MANDATORY KEYWORD INCLUSION STRATEGY (100% REQUIREMENT):
-   - Extract EVERY high-impact keyword from the job description (technologies, tools, methodologies, skills, certifications, acronyms)
-   - You MUST include EVERY keyword mentioned in the job description - they MUST appear in the resume
-   - CRITICAL: Include ALL acronyms EXACTLY as written in job description (preserve exact format, capitalization, and spelling)
-   - CRITICAL: Include multi-word technical terms and compound phrases EXACTLY as they appear in the job description
-   - Use the EXACT terminology from the job description - ATS systems look for exact matches, especially for acronyms and specific technical terms
-   - Include keywords NATURALLY throughout the resume: in summary, skills section, experience bullets, and project descriptions
-   - If a keyword is missing from the original resume, ADD it to the skills section (REQUIRED for 100% match). Optionally add to summary and/or ONE experience bullet if it naturally fits.
-   - 100% MATCH PRIORITY: Skills section + summary should contain ALL keywords. Experience bullets are optional enhancement - don't force keywords into bullets if they don't fit naturally.
-   - CREDIBILITY IS KEY: Keywords in skills should ideally be supported by evidence in experience bullets, but for 100% match mode, skills section coverage is acceptable if bullets don't naturally support them
-   - Repeat important keywords 2-3 times throughout the resume for better ATS scoring, but make each mention feel natural and contextual. NO REPETITION in bullets - each keyword appears in only ONE bullet maximum.
-   - Create a comprehensive skills section that includes ALL job-required technologies (this is the primary way to achieve 100% match)
-   - Pay special attention to compound technical terms and multi-word phrases - extract and include them exactly as written
-   - When adding concept/methodology keywords: Add to skills section first, then summary, then optionally ONE experience bullet if it naturally fits. DO NOT add the same keyword to multiple bullets.
-5. ZERO TOLERANCE FOR MISSING KEYWORDS:
-   - NO keyword should be missing - if you see it in the job description, it MUST be in the tailored resume
-   - If the job requires any technology, tool, skill, or methodology and it's not in the resume, ADD it to the appropriate section
-   - CRITICAL: Check for acronyms and technical compound terms - these are often the most important for ATS matching
-   - Include them EXACTLY as written in the job description (preserve format, capitalization, and spelling)
-6. ADD all relevant keywords, skills, tools, and technologies from the job description to the resume - 100% INCLUSION REQUIRED
-7. ENHANCE experience bullets to include job-required skills and achievements - REFRAME bullets to naturally demonstrate keywords through actual work, showing HOW they were used, not just mentioning them
-8. REORGANIZE and EMPHASIZE sections to highlight qualifications that match the job
-9. ALIGN RESUME TONE WITH ROLE TYPE:
-   - Analyze the job title and primary responsibilities to understand the role's focus
-   - Rephrase experience bullets to match the PRIMARY focus of the role, not just add keywords as afterthoughts
-   - The resume should read like it's written FOR this specific role, not a generic resume with keywords added
-   - Rephrase the professional summary to emphasize the PRIMARY focus of the role based on the job description
-   - Match the tone and emphasis of the job description - if the job emphasizes a specific domain (e.g., AI/ML, data analysis, product management, marketing), align the resume accordingly
-10. Use measurable language (numbers, percentages, metrics) - you can add reasonable metrics if they help match the job
-11. Match the EXACT language and terminology used in the job description for maximum ATS optimization
-12. Keep personal information (name, contact, address) exactly as provided
-13. Preserve ALL major sections, experience, and projects from the original resume (but enhance them)
-14. CRITICAL: Your resume must pass ATS filters - this means including 100% of high-impact keywords from the job description. ZERO missing keywords allowed.
-15. If the job requires specific certifications, software, or methodologies not in the resume, ADD them if they're reasonable for the user's background
-16. Create a "Keywords" or "Technologies" section if needed to ensure all important terms are included
-17. In the professional summary, include 5-10 key terms from the job description naturally, and ALIGN the summary tone with the role type (e.g., for "AI/ML Intern" role, emphasize AI/ML work, not just "Full-Stack Engineer")
-18. BEFORE FINALIZING: Verify that EVERY keyword from the job description appears in the tailored resume. If any are missing, ADD them immediately.
-19. ROLE ALIGNMENT CHECK:
-   - Read the job title and primary responsibilities
-   - If job is "AI/ML Intern", the resume should emphasize AI/ML work, prompt engineering, LLMs, evaluation frameworks
-   - If job is "Data Scientist", emphasize data analysis, modeling, statistics
-   - If job is "Product Manager", emphasize product strategy, user research, roadmaps
+3. SAFE KEYWORD ENHANCEMENT LADDER:
+   - Level 1 (Always): REPHRASE existing experience to match job terminology
+   - Level 2 (Safe if adjacent): Expand scope using closely related skills already implied by the resume
+   - Level 3 (Controlled): Add missing keywords to the SKILLS section only when they are reasonable adjacent skills; do NOT force them into experience bullets
+   - NEVER: Invent new work environments, certifications, licenses, or core job responsibilities
+4. KEYWORD COVERAGE STRATEGY:
+   - Skills section + summary should cover most important keywords
+   - Experience bullets should only include keywords that are clearly supported by existing responsibilities
+   - Avoid stuffing; 1 keyword max per bullet if it fits naturally
+   - Use the EXACT terminology from the job description for acronyms/compound terms when you include them
+5. ROLE ALIGNMENT:
    - Rephrase the professional summary to match the PRIMARY focus of the role
-   - Rephrase experience bullets to emphasize work that aligns with the role, not just add keywords
-   - The resume should sound like it was written FOR this specific role, not a generic resume with keywords sprinkled in
+   - Rephrase experience bullets to emphasize relevant work (not just add keywords)
+   - The resume should read like it was written FOR this specific role, not a generic resume with keywords added
+6. Use measurable language (numbers, percentages, metrics) only if reasonable and believable
+7. Keep personal information (name, contact, address) exactly as provided
+8. Preserve ALL major sections, experience, and projects from the original resume (but enhance them)
+9. Create a "Keywords" or "Technologies" section if needed to include important terms without distorting experience
+${riskLevel === 'HIGH' ? `HIGH CONSEQUENCE ROLE DETECTED — CREDIBILITY OVERRIDES KEYWORD MATCH
+This role involves regulated, safety-critical, or legally sensitive responsibilities.
+CRITICAL RULES:
+- DO NOT invent or add new qualifications, certifications, licenses, or regulated responsibilities
+- DO NOT add experience in environments the candidate has not actually worked in
+- Only REPHRASE and REORGANIZE existing experience to improve alignment
+- Keywords may be used ONLY if they truthfully reflect existing experience
+` : riskLevel === 'MEDIUM' ? `MEDIUM CONSEQUENCE ROLE DETECTED — CONSERVATIVE ENHANCEMENT
+CRITICAL RULES:
+- Prefer rephrasing and alignment over additions
+- You may add adjacent keywords to the SKILLS section only if they are reasonable and low-risk
+- Do NOT add certifications, licenses, or regulated responsibilities
+- Do NOT imply authority or accountability beyond the original resume
+` : ''}
 
 ORIGINAL RESUME:
 ${resumeText}
@@ -1859,6 +1848,60 @@ IMPORTANT:
       coverLetter: '',
       fullResume: content,
     };
+  }
+
+  private getFabricationRiskLevel(jobDescription: string): 'LOW' | 'MEDIUM' | 'HIGH' {
+    const text = jobDescription.toLowerCase();
+    const highRiskSignals = [
+      'licensed',
+      'license required',
+      'certification required',
+      'board certified',
+      'registered with',
+      'regulatory authority',
+      'clinical',
+      'patient',
+      'diagnosis',
+      'treatment',
+      'legal representation',
+      'court filing',
+      'court filings',
+      'compliance sign-off',
+      'safety procedures',
+      'hazard',
+      'aircraft',
+      'airworthiness',
+      'structural approval',
+      'medical',
+      'pharmaceutical',
+      'nursing',
+      'nurse',
+      'care home',
+      'home care',
+      'elderly care',
+      'disability care',
+      'social work',
+    ];
+
+    const mediumRiskSignals = [
+      'compliance',
+      'regulatory reporting',
+      'financial reporting',
+      'audit',
+      'data protection',
+      'information security',
+      'policy enforcement',
+      'risk management',
+      'safeguarding',
+      'gdpr',
+      'hipaa',
+      'pci',
+      'sox',
+    ];
+
+    if (highRiskSignals.some(keyword => text.includes(keyword))) return 'HIGH';
+    if (mediumRiskSignals.some(keyword => text.includes(keyword))) return 'MEDIUM';
+    return 'LOW';
   }
 
   private generatePlainTextResume(structured: any): string {

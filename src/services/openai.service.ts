@@ -72,10 +72,17 @@ export class OpenAIService {
         risk_level: meta.riskLevel,
       });
 
-      const jobKeywords = meta.keywords.length > 0 ? meta.keywords : roughKeywords;
+      const jobKeywords = meta.keywords.length >= 10 ? meta.keywords : roughKeywords;
+      if (meta.keywords.length < 10 && roughKeywords.length > 0) {
+        logger.warn('Tailor pipeline: falling back to heuristic keywords', {
+          extracted_count: meta.keywords.length,
+          fallback_count: roughKeywords.length,
+        });
+      }
       
       // Detect role level for seniority-aware language
       const roleLevel = meta.roleSeniority || this.detectRoleLevel(jobDescription);
+      const riskLevel = meta.riskLevel || this.getFabricationRiskLevel(jobDescription);
       const seniorityRules = this.getSeniorityLanguageRules(roleLevel);
       
       logger.info('Role level detected', {
@@ -1996,6 +2003,7 @@ IMPORTANT:
     resumeText: string,
     jobDescription: string
   ): Promise<TailoringMeta> {
+    const startTime = Date.now();
     const prompt = `You are extracting structured info. Return JSON only.
 
 TASKS:
@@ -2033,6 +2041,10 @@ OUTPUT JSON:
       temperature: 0.2,
       max_tokens: 1200,
       response_format: { type: 'json_object' },
+    });
+    const apiTime = Date.now();
+    logger.info('Tailor pipeline: extraction API completed', {
+      duration_ms: apiTime - startTime,
     });
 
     const content = response.choices[0]?.message?.content || '';

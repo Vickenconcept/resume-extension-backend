@@ -494,6 +494,9 @@ ${missingKeywordsList}
 - Add only low-risk, adjacent skills when reasonable
 - If a keyword does not naturally fit, omit it
 - Do NOT downgrade strong action verbs
+ - DOMAIN SAFETY: Only use domain/industry-specific terms if the resume shows direct or strongly implied experience in that domain
+ - If the job description is domain-specific but the resume is not, use neutral terms like "data-sensitive environments", "regulated systems", "enterprise platforms", or "operational workflow systems"
+ - DO NOT introduce industry acronyms (e.g., "RCM", "HIPAA", "PCI", "SOX", "KYC") unless clearly supported by the resume
 
 ${riskLevel === 'HIGH' ? `HIGH CONSEQUENCE ROLE: prioritize trust over coverage. Reframe for alignment but do not add qualifications or new environments.` : riskLevel === 'MEDIUM' ? `MEDIUM CONSEQUENCE ROLE: conservative additions, skills-only if low-risk.` : `LOW CONSEQUENCE ROLE: you may add adjacent skills/tools if credible.`}
 
@@ -1459,6 +1462,10 @@ CRITICAL RULES FOR FLEXIBLE MODE (SMART MATCH MODE - HIGH MATCH WITHOUT FAKE EXP
    - If the resume reads overqualified, reduce overly senior verbs ("architected", "owned end-to-end") and emphasize hands-on implementation
    - If the resume reads underqualified, emphasize ownership and scope only when supported by existing work
    - Do NOT claim leadership, authority, or responsibilities that are not supported by the original resume
+11. DOMAIN SAFETY GUARDRAIL:
+   - Only use domain/industry-specific terms (e.g., healthcare, fintech, legal, insurance, government, compliance frameworks) if the original resume shows direct or strongly implied experience in that domain
+   - If the job description is domain-specific but the resume is not, use neutral alternatives (e.g., "data-sensitive environments", "regulated systems", "enterprise platforms", "operational workflow systems") instead of naming the domain
+   - DO NOT introduce industry acronyms like "RCM", "HIPAA", "PCI", "SOX", or "KYC" unless the resume already mentions that domain or compliance context
 ${riskLevel === 'HIGH' ? `HIGH CONSEQUENCE ROLE DETECTED — STRONG ALIGNMENT WITHOUT FABRICATION
 This role involves regulated, safety-critical, or legally sensitive responsibilities.
 CRITICAL RULES:

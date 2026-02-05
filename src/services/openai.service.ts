@@ -94,7 +94,8 @@ export class OpenAIService {
         systemMessage = [
           "You are an expert resume writer.",
           "- Do NOT add any skills or experience that are not present in the original resume.",
-          "- Only rephrase, reorganize, or lightly emphasize existing content to better match the job description.",
+          "- Rewrite for clarity, professionalism, and role relevance using only existing facts.",
+          "- Remove fluff and generic phrasing; keep wording concise and recruiter-friendly.",
           "- Preserve factual accuracy at all times.",
           "- Output only valid JSON in the requested schema.",
         ].join('\n');

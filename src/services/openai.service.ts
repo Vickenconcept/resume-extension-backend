@@ -81,12 +81,12 @@ export class OpenAIService {
           "- Output only valid JSON in the requested schema.",
         ].join('\n');
       } else if (generateFreely) {
-        // Flexible mode: improve match, can add reasonable content consistent with background
+        // Flexible mode: ATS boost with careful, low-risk additions
         systemMessage = [
           "You are an expert resume writer.",
-          "- Improve alignment between the resume and the job description.",
-          "- You may add reasonable skills or phrases that are consistent with the candidate's background.",
-          "- Keep the resume believable, professional, and coherent.",
+          "- Maximize role alignment and ATS relevance while staying believable.",
+          "- You may add limited, low-risk skills or phrases consistent with the candidate's background.",
+          "- Keep the resume professional and coherent; avoid keyword stuffing.",
           "- Output only valid JSON in the requested schema.",
         ].join('\n');
       } else {
@@ -240,13 +240,13 @@ export class OpenAIService {
           "- Output only valid JSON in the requested schema.",
         ].join('\n');
       } else if (generateFreely) {
-        // Flexible mode: improve match, can add reasonable content based on missingKeywords
+        // Flexible mode: improve alignment with careful, low-risk additions
         regenerateSystemMessage = [
           "You are an expert resume writer.",
-          "- Regenerate the resume to better match the job description and improve ATS keyword coverage.",
-          "- Use missingKeywords to guide additions and matchedKeywords to preserve what is already working.",
-          "- You may add reasonable skills or phrases that are consistent with the candidate's background.",
-          "- Keep the resume natural, human-sounding, and professional.",
+          "- Regenerate the resume to be clearer, more professional, and more aligned to the job description.",
+          "- Use missingKeywords as guidance, not a checklist; prioritize relevance and credibility.",
+          "- You may add limited, low-risk skills or phrases consistent with the candidate's background.",
+          "- Keep the resume natural, human-sounding, and recruiter-friendly.",
           "- Output only valid JSON in the requested schema.",
         ].join('\n');
       } else {
@@ -380,7 +380,7 @@ IMPORTANT: Based on this context, ${requiredTone === 'ownership-driven' ? 'MAINT
   }
 
   /**
-   * Build focused regeneration prompt that emphasizes adding missing keywords
+   * Build focused regeneration prompt that improves role alignment and clarity
    */
   private buildRegenerationPrompt(
     resumeText: string,
@@ -394,6 +394,7 @@ IMPORTANT: Based on this context, ${requiredTone === 'ownership-driven' ? 'MAINT
     customInstructions?: string
   ): string {
     const rules = seniorityRules || this.getSeniorityLanguageRules(roleLevel);
+    const riskLevel = this.getFabricationRiskLevel(jobDescription);
     
     // If custom instructions are provided, prioritize them
     if (customInstructions && customInstructions.trim().length > 0) {
@@ -468,162 +469,41 @@ ${wantsAllKeywords ? '⚠️ FINAL CHECK: Before returning, verify that EVERY mi
       // Analyze job context for role-aware regeneration
       const roleContext = this.analyzeJobContext(jobDescription, roleLevel);
       
-      return `You are a senior technical recruiter and resume strategist. Your job is to intelligently enhance this resume for the provided job description by adding missing keywords naturally while maintaining human-sounding, believable language.
+      return `You are a senior resume strategist. Regenerate this resume to be clearer, more professional, and closer to the job description while staying believable.
 
-🎯 PRIMARY OBJECTIVES (IN ORDER OF PRIORITY):
-1. Achieve 95-100% keyword match through intelligent, plausible additions
-2. Maintain natural, human-sounding language - avoid obvious AI keyword stuffing
-3. Frame added keywords at implementation/integration level, not deep specialization
-4. Preserve confident, ownership-driven tone - never downgrade action verbs
-5. Preserve all core information (experiences, companies, dates, projects, education)
-6. The resume must read like a human career strategist positioned the candidate, not an AI
+🎯 PRIMARY OBJECTIVES:
+1. Make the resume better than it was: clearer, more professional, and more aligned to the role
+2. Focus on what matters for this job; remove or de-emphasize low-value details
+3. Use missing keywords only as guidance, not a checklist to force in
+4. Preserve all core facts (experiences, companies, dates, projects, education)
+5. The resume must read like a human career strategist positioned the candidate
 
-🎯 FLEXIBLE MODE GUIDANCE:
-You are in FLEXIBLE MODE - you can intelligently add missing keywords, but with plausibility guardrails. Frame additions as natural career positioning, not fabrication.
-
-📋 JOB CONTEXT ANALYSIS (CRITICAL - Use this to guide your regeneration):
+📋 JOB CONTEXT (Use this to guide your rewrite):
 ${roleContext}
 
-🚨 MISSING KEYWORDS TO INTEGRATE (Intelligently add with plausibility guardrails):
+📌 KEYWORDS TO CONSIDER (Use only if they naturally fit the resume):
 ${missingKeywordsList}
 
-🔑 KEYWORD INTEGRATION RULES FOR FLEXIBLE MODE:
+🎯 ROLE LEVEL DETECTED: ${roleLevel.toUpperCase()}
+- Preferred verbs: ${rules.verbs.join(', ')}
+- Avoid verbs: ${rules.avoidVerbs.length > 0 ? rules.avoidVerbs.join(', ') : 'None'}
+- Scope: ${rules.scope}
 
-🟢 TIER 1 - ADJACENT SKILLS/TOOLS (Safe to Add Naturally):
-These can be added if the resume shows related experience in the same category/domain:
-- If resume has experience with tools/platforms in a category → Can add related tools from same category
-- If resume has experience with methodologies → Can add related methodologies
-- If resume has experience with software types → Can add related software
-- If resume has domain experience → Can add related domain-specific tools/skills
-- Principle: Related items within the same category are safe to add
+🛡️ CREDIBILITY RULES (FLEXIBLE MODE):
+- Do NOT fabricate credentials, licenses, or environments
+- Add only low-risk, adjacent skills when reasonable
+- If a keyword does not naturally fit, omit it
+- Do NOT downgrade strong action verbs
 
-✅ CORRECT LANGUAGE FOR TIER 1 (Works for ALL domains):
-- "Integrated [category] services including [keyword]" (e.g., "Integrated marketing platforms including [tool]")
-- "Worked with [related tools] such as [keyword]" (e.g., "Worked with design software such as [tool]")
-- "Implemented features using [tool/platform]" (e.g., "Implemented features using [software]")
-- "Leveraged [category] tools to enhance [functionality]" (e.g., "Leveraged analytics tools to enhance reporting")
+${riskLevel === 'HIGH' ? `HIGH CONSEQUENCE ROLE: prioritize trust over coverage. Reframe for alignment but do not add qualifications or new environments.` : riskLevel === 'MEDIUM' ? `MEDIUM CONSEQUENCE ROLE: conservative additions, skills-only if low-risk.` : `LOW CONSEQUENCE ROLE: you may add adjacent skills/tools if credible.`}
 
-🟡 TIER 2 - STRETCH BUT DEFENSIBLE (Add with Soft Language):
-Related but not directly supported - use softer integration language:
-- If resume has experience in a broader category → Can mention specific sub-skills (not deep specialization)
-- Principle: Frame as exposure/integration, not expertise
-
-✅ CORRECT LANGUAGE FOR TIER 2 (Works for ALL domains):
-- "Integrated [category] services including [specific sub-skill]" (e.g., "Integrated healthcare systems including [specific module]")
-- "Worked with [specific tool] to enhance [existing feature]" (e.g., "Worked with [advanced feature] to enhance [existing work]")
-- NOT: "Built [specialized system]" or "Designed [specialized framework]" or "Created [specialized methodology]"
-
-🔴 TIER 3 - HIGH RISK (Add Only to Skills Section, Not Experience):
-These should only appear in skills section, not experience bullets:
-- Deep specialization claims
-- Domain expertise not supported by resume
-- Advanced concepts that require specific background
-
-⚠️ DOMAIN-AGNOSTIC FILTERING: Ignore any non-skill keywords like dates, locations, company names, application instructions, or posting metadata. Only treat as missing if they are actual required skills/tools/qualifications. This app works for ALL job types (software, healthcare, finance, marketing, etc.) - use semantic understanding to distinguish real skills from job posting boilerplate.
-
-🎯 KEY PRINCIPLE:
-Frame added keywords as implementation/integration work, not deep specialization. Use phrases like "integrated", "worked with", "implemented using", "leveraged services" - NOT "architected", "designed from scratch", "built core systems". The goal is natural career positioning, not fabrication.
-
-🎯 ROLE LEVEL DETECTED: ${roleLevel.toUpperCase()} - Use appropriate language for this role level:
-- PREFERRED VERBS: ${rules.verbs.join(', ')}
-- AVOID THESE VERBS: ${rules.avoidVerbs.length > 0 ? rules.avoidVerbs.join(', ') : 'None - all verbs acceptable for this level'}
-- SCOPE: ${rules.scope}
-- KEYWORD STRENGTH: ${rules.keywordStrength === 'exploratory' ? 'Use exploratory language (e.g., "exposure to", "familiar with", "explored")' : rules.keywordStrength === 'practical' ? 'Use practical language (e.g., "built", "implemented", "worked with")' : 'Use strategic language (e.g., "architected", "led", "designed")'}
-- For ${roleLevel === 'intern' ? 'intern roles, use learning/contribution language - show eagerness to learn, not claims of building production systems' : roleLevel === 'junior' ? 'junior roles, focus on feature-level work and collaboration' : roleLevel === 'senior' || roleLevel === 'staff' ? 'senior roles, you can use leadership and architecture language' : 'mid-level roles, balance practical implementation with some design ownership'}
-
-VERIFICATION CHECKLIST (Only add keywords that map to existing resume content):
-${filteredMissingKeywords.map((kw, idx) => `[ ] "${kw}" - Only add if it maps to existing resume content, otherwise OMIT`).join('\n')}
-
-JOB DESCRIPTION (READ CAREFULLY - This defines what the role needs):
+JOB DESCRIPTION:
 ${jobDescription}
 
-CURRENT RESUME CONTENT (Use this as your foundation):
+CURRENT RESUME CONTENT:
 ${resumeText}
 
-${matchedKeywords.length > 0 ? `\n✅ MATCHED KEYWORDS (Already present - maintain these naturally):
-${matchedKeywords.map((kw, idx) => `${idx + 1}. "${kw}"`).join('\n')}
-
-These keywords are already well-matched. Ensure they remain naturally integrated in the regenerated resume.\n` : ''}
-
-🚨 CRITICAL LANGUAGE PROTECTION RULES (NEVER VIOLATE THESE):
-
-1. VERB PROTECTION - DO NOT DOWNGRADE OWNERSHIP:
-   ❌ FORBIDDEN DOWNGRADES (Never do these):
-   - "Led" → "Helped/Participated/Assisted"
-   - "Built" → "Worked on/Contributed to"
-   - "Implemented" → "Assisted with/Supported"
-   - "Architected" → "Supported/Helped design"
-   - "Owned" → "Worked on/Contributed to"
-   - "Designed" → "Assisted with design"
-   
-   ✅ CORRECT APPROACH:
-   - If a bullet says "Led development", keep it as "Led" or strengthen to "Led and architected"
-   - If a bullet says "Built APIs", keep it as "Built" or enhance to "Built and optimized"
-   - If a bullet says "Implemented features", keep it as "Implemented" or enhance to "Implemented and scaled"
-   - ONLY use weaker verbs (contributed, assisted, participated) if the role is explicitly intern/junior AND the original resume already used those verbs
-   - For contract/startup roles: MAINTAIN or STRENGTHEN ownership language
-
-2. OWNERSHIP & IMPACT PRESERVATION:
-   - Maintain strong action verbs that show ownership and results
-   - Preserve impact language (numbers, metrics, outcomes)
-   - Keep confident, professional tone
-   - Do NOT add filler phrases like "gained experience in" or "exposure to" unless the role is explicitly an internship
-
-3. ROLE-APPROPRIATE LANGUAGE:
-   - For ${roleLevel === 'intern' ? 'intern roles: Use learning/contribution language if original resume already uses it' : roleLevel === 'junior' ? 'junior roles: Maintain practical implementation language' : roleLevel === 'senior' || roleLevel === 'staff' ? 'senior roles: Maintain or strengthen leadership/architecture language' : 'mid-level roles: Maintain ownership and implementation language'}
-   - Match the tone of the job description - if it emphasizes "ship fast", "own features", "make decisions", use strong ownership language
-   - If job description emphasizes "learning", "mentorship", "growth", balance ownership with collaboration
-
-🎯 INTELLIGENT REGENERATION STRATEGY:
-
-1. CORE INFORMATION PRESERVATION:
-   - Preserve all experiences, companies, dates, projects, education, and contact information
-   - Maintain the overall structure and sections
-   - Keep all matched keywords naturally integrated: ${matchedKeywords.length > 0 ? matchedKeywords.join(', ') : 'N/A'}
-
-2. INTELLIGENT KEYWORD INTEGRATION (With Plausibility Guardrails):
-   - Skills Section: Add ALL missing keywords here if they are adjacent to existing skills (this is safe - skills lists are comprehensive)
-   - Summary: Integrate 3-5 most important missing keywords naturally, using soft integration language
-   - Experience Bullets: Enhance bullets to include missing keywords using integration-level language
-   - Use soft language: "integrated", "worked with", "implemented using", "leveraged", "utilized", "collaborated with"
-   - ONE keyword per bullet maximum - don't cram multiple concepts into one bullet
-   - Each keyword should appear in only ONE experience bullet (if at all) - avoid repetition
-   - Frame as implementation/integration work, not deep specialization
-   - Example: "Integrated [category] services including [keyword]" NOT "Built [keyword] systems" or "Designed [keyword] framework"
-   - If a keyword is too far from existing experience, add it only to skills section, not experience bullets
-
-3. INTELLIGENT RESTRUCTURING (Make it BETTER while MAINTAINING OWNERSHIP):
-   - Rephrase bullets to better align with the role's primary focus FROM THE JOB DESCRIPTION
-   - Prioritize relevant experience and skills that match the job requirements
-   - Improve clarity and flow - the resume should read naturally
-   - MAINTAIN or STRENGTHEN ownership language - never weaken it
-   - Use role-appropriate language (${rules.verbs.join(', ')}) BUT only if it doesn't downgrade existing strong verbs
-   - When rephrasing: Enhance the sentence without reducing authority and without adding new technologies
-   - Example GOOD (Rephrasing): "Built APIs" → "Built scalable RESTful APIs" (if APIs were already there)
-   - Example BAD (Adding): "Built APIs" → "Built APIs using MongoDB" (if MongoDB wasn't in original resume)
-   - REMEMBER: You REPHRASE existing content, you do NOT ADD new technologies or tools
-   - ${roleLevel === 'intern' ? 'For intern roles: Only use exploratory language if original resume already uses it' : roleLevel === 'junior' ? 'For junior roles: Maintain practical implementation language, avoid downgrading' : roleLevel === 'senior' || roleLevel === 'staff' ? 'For senior roles: Maintain or strengthen leadership/architecture language' : 'For mid-level roles: Maintain ownership and implementation language'}
-
-5. TERMINOLOGY & EXAMPLES:
-   - Use EXACT terminology from missing keywords when possible
-   - For technology/tool keywords: Add to skills section (required), only add to bullets if work actually involved it
-   - For concept/methodology keywords: Add to skills section, summary if core requirement, and ONE bullet where it makes sense
-   - Example GOOD: "Built APIs supporting retrieval-augmented generation (RAG) patterns" - shows HOW keyword was used
-   - Example BAD: Adding 5+ advanced concepts to one bullet - sounds fabricated
-   - Example BAD: Repeating same keyword in multiple bullets - keyword stuffing
-
-6. FINAL QUALITY CHECKS:
-   - NATURALNESS CHECK: Does the resume sound like a human wrote it, or obvious AI keyword stuffing?
-   - LANGUAGE CHECK: Are added keywords framed as integration/implementation work, not deep specialization?
-   - VERB PROTECTION CHECK: Ensure no action verbs were downgraded (Led→Participated, Built→Assisted, etc.)
-   - Review all bullets for role-appropriate language (${rules.verbs.join(', ')}) WITHOUT downgrading existing strong verbs
-   - Each keyword should appear in only ONE bullet maximum (avoid repetition)
-   - If a bullet mentions 2+ new advanced concepts, simplify to 1 keyword per bullet
-   - Ask: "Could this person defend this in an interview?" - maintain believability
-   - OWNERSHIP CHECK: The resume should show the same or stronger ownership than the original
-   - INTEGRATION LANGUAGE CHECK: Are added keywords using soft phrases like "integrated", "worked with", "implemented using", "leveraged", "utilized"?
-   - The regenerated resume should be BETTER - more natural, credible, and role-aligned
-   - REMEMBER: Naturalness and believability are more important than 100% keyword coverage. It's better to achieve 95% match with natural language than 100% with obvious stuffing.
+${matchedKeywords.length > 0 ? `MATCHED KEYWORDS TO PRESERVE: ${matchedKeywords.slice(0, 40).join(', ')}\n` : ''}
 
 ${jobKeywords.length > 0 ? `\nKEYWORDS FROM JOB DESCRIPTION:\n${jobKeywords.slice(0, 50).join(', ')}\n` : ''}
 
@@ -651,11 +531,11 @@ Your task: Return a STRUCTURED JSON object with the regenerated resume data and 
     }
   ],
   "skills": {
-    "languages": ["Language 1", "Language 2", "ADD MISSING KEYWORDS HERE"],
-    "frameworks": ["Framework 1", "Framework 2", "ADD MISSING KEYWORDS HERE"],
-    "devops": ["Tool 1", "Tool 2", "ADD MISSING KEYWORDS HERE"],
-    "databases": ["Database 1", "Database 2", "ADD MISSING KEYWORDS HERE"],
-    "other": ["Skill 1", "Skill 2", "ADD MISSING KEYWORDS HERE"]
+    "languages": ["Language 1", "Language 2"],
+    "frameworks": ["Framework 1", "Framework 2"],
+    "devops": ["Tool 1", "Tool 2"],
+    "databases": ["Database 1", "Database 2"],
+    "other": ["Skill 1", "Skill 2"]
   },
   "experience": [
     {
@@ -685,18 +565,17 @@ Your task: Return a STRUCTURED JSON object with the regenerated resume data and 
   "coverLetter": "A professional cover letter (3-4 paragraphs) expressing interest, highlighting 2-3 relevant experiences/skills, and showing fit for the role. Use the person's name from the resume."
 }
 
-MANDATORY REQUIREMENTS FOR FLEXIBLE MODE:
+MANDATORY REQUIREMENTS FOR FLEXIBLE MODE (REGENERATION):
 - Extract ALL information from the CURRENT RESUME CONTENT above - nothing should be missing
 - PRESERVE 100% of all existing sections, experience, skills, education, projects
-- INTELLIGENTLY ADD missing keywords with plausibility guardrails - frame as integration/implementation work, not deep specialization
+- Make the resume BETTER: clearer, more professional, and closer to the job description
+- Focus on role relevance; reduce low-value or generic wording
 - CRITICAL: MAINTAIN or STRENGTHEN ownership language - NEVER downgrade action verbs (Led→Participated, Built→Assisted, etc.)
-- CRITICAL: Use soft integration language for added keywords: "integrated", "worked with", "implemented using APIs", "leveraged services" - NOT "architected", "designed from scratch", "built core systems"
-- For skills section: Keep ALL existing skills AND ADD missing technology/tool keywords (adjacent technologies are safe to add)
-- For experience bullets: ENHANCE bullets to include missing keywords using integration-level language - maximum 1 keyword per bullet
-- For summary: Keep existing summary AND ADD 3-5 most important missing keywords naturally with soft integration language
-- CREDIBILITY CHECK: Added keywords should feel like natural career positioning, not fabrication. Use integration language, not deep-expert claims
-- KEYWORD DENSITY: Maximum 1 new keyword per experience bullet - don't cram multiple advanced concepts into one bullet
-- DISTRIBUTE keywords across bullets: Spread keywords across different experience bullets (1 keyword per bullet max) rather than stuffing them all into one
+- Add only low-risk, adjacent keywords when they naturally fit; avoid forced keyword insertion
+- For skills section: Keep ALL existing skills; only add what is credible
+- For experience bullets: Reframe to highlight relevant work; do not add unsupported responsibilities
+- For summary: Prioritize clarity and role alignment over keyword density
+- CREDIBILITY CHECK: The resume must feel truthful, natural, and defensible in an interview
 - NO REPETITION: Each keyword should appear in only ONE experience bullet (if at all) - don't repeat the same keyword across multiple bullets
 - NATURALNESS CHECK: The resume must sound like a human career strategist positioned the candidate, not an AI keyword stuffer
 - If a section doesn't exist in the original resume, use an empty array or omit the field

@@ -332,6 +332,63 @@ export class AdminController {
   }
 
   /**
+   * Get all payments with pagination (admin only)
+   */
+  async getPayments(req: Request, res: Response): Promise<void> {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const skip = (page - 1) * limit;
+      const status = (req.query.status as string) || '';
+
+      const where: any = {};
+      if (status) {
+        where.status = status;
+      }
+
+      const [payments, total] = await Promise.all([
+        prisma.payment.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          },
+        }),
+        prisma.payment.count({ where }),
+      ]);
+
+      const totalPages = Math.ceil(total / limit);
+
+      ApiResponseFormatter.success(
+        res,
+        {
+          payments,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages,
+            hasNext: page < totalPages,
+            hasPrev: page > 1,
+          },
+        },
+        'Payments retrieved successfully'
+      );
+    } catch (error: any) {
+      logger.error('Get payments error:', error);
+      ApiResponseFormatter.error(res, 'Failed to get payments: ' + error.message, 500);
+    }
+  }
+
+  /**
    * Get payment plans from database
    */
   async getPaymentPlans(req: Request, res: Response): Promise<void> {

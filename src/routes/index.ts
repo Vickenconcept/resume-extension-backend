@@ -168,6 +168,8 @@ router.put('/admin/users/:id', adminAuthenticate, (req, res) => adminController.
 
 // GET /api/admin/payment-plans - Get payment plans
 router.get('/admin/payment-plans', adminAuthenticate, (req, res) => adminController.getPaymentPlans(req, res));
+// GET /api/admin/payments - Get payments
+router.get('/admin/payments', adminAuthenticate, (req, res) => adminController.getPayments(req, res));
 
 // POST /api/admin/payment-plans - Create payment plan
 router.post('/admin/payment-plans', adminAuthenticate, (req, res) => adminController.createPaymentPlan(req, res));

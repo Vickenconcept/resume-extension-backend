@@ -983,16 +983,18 @@ export class ResumeController {
       });
 
       // If deleted resume was default, set another one as default
-      const remainingResume = await prisma.resume.findFirst({
-        where: { userId: user.id },
-        orderBy: { createdAt: 'desc' },
-      });
-
-      if (remainingResume) {
-        await prisma.resume.update({
-          where: { id: remainingResume.id },
-          data: { isDefault: true },
+      if (resume.isDefault) {
+        const remainingResume = await prisma.resume.findFirst({
+          where: { userId: user.id },
+          orderBy: { createdAt: 'desc' },
         });
+
+        if (remainingResume) {
+          await prisma.resume.update({
+            where: { id: remainingResume.id },
+            data: { isDefault: true },
+          });
+        }
       }
 
       ApiResponseFormatter.success(res, null, 'Resume deleted successfully');

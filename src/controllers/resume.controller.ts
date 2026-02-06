@@ -10,11 +10,38 @@ import { QualityService } from '../services/quality.service';
 
 const prisma = new PrismaClient();
 const openAIService = new OpenAIService();
+
+type RateLimitEntry = {
+  count: number;
+  windowStart: number;
+};
+
+const rateLimitWindowMs = 60 * 1000;
+const defaultRateLimit = parseInt(process.env.RESUME_RATE_LIMIT_PER_MIN || '5', 10);
+const userRateLimits = new Map<number, RateLimitEntry>();
 const resumeParserService = new ResumeParserService();
 const fileUploadService = new FileUploadService();
 const documentService = new DocumentService();
 
 export class ResumeController {
+  private checkRateLimit(userId: number): { allowed: boolean; retryAfterMs?: number } {
+    const now = Date.now();
+    const entry = userRateLimits.get(userId);
+    const limit = Number.isFinite(defaultRateLimit) && defaultRateLimit > 0 ? defaultRateLimit : 5;
+
+    if (!entry || now - entry.windowStart >= rateLimitWindowMs) {
+      userRateLimits.set(userId, { count: 1, windowStart: now });
+      return { allowed: true };
+    }
+
+    if (entry.count >= limit) {
+      const retryAfterMs = rateLimitWindowMs - (now - entry.windowStart);
+      return { allowed: false, retryAfterMs };
+    }
+
+    entry.count += 1;
+    return { allowed: true };
+  }
   /**
    * Get user's default template preference
    */
@@ -222,6 +249,16 @@ export class ResumeController {
 
       const user = req.user;
 
+      const rateLimit = this.checkRateLimit(user.id);
+      if (!rateLimit.allowed) {
+        ApiResponseFormatter.error(
+          res,
+          `Too many requests. Please try again in ${Math.ceil((rateLimit.retryAfterMs || 0) / 1000)} seconds.`,
+          429
+        );
+        return;
+      }
+
       // Check and deduct credits
       const creditCheck = await this.checkAndDeductCredits(user.id, 'generate');
       if (!creditCheck.hasCredits) {
@@ -399,6 +436,16 @@ export class ResumeController {
       }
 
       const user = req.user;
+
+      const rateLimit = this.checkRateLimit(user.id);
+      if (!rateLimit.allowed) {
+        ApiResponseFormatter.error(
+          res,
+          `Too many requests. Please try again in ${Math.ceil((rateLimit.retryAfterMs || 0) / 1000)} seconds.`,
+          429
+        );
+        return;
+      }
 
       // Check and deduct credits
       const creditCheck = await this.checkAndDeductCredits(user.id, 'regenerate');

@@ -3,20 +3,81 @@ import logger from '../utils/logger';
 import { ParsedResumeContent, TailoredResumeData } from '../types';
 
 export class OpenAIService {
-  private client: OpenAI;
+  private clients: OpenAI[] = [];
+  private clientIndex = 0;
   private baseUrl = 'https://api.openai.com/v1';
+  private maxRetries = parseInt(process.env.OPENAI_MAX_RETRIES || '4', 10);
+  private retryBaseMs = parseInt(process.env.OPENAI_RETRY_BASE_MS || '500', 10);
 
   constructor() {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
+    const apiKey = (process.env.OPENAI_API_KEY || '').trim();
+    const keyPoolRaw = (process.env.OPENAI_API_KEYS || '').trim();
+    const keyPool = keyPoolRaw
+      .split(',')
+      .map(key => key.trim())
+      .filter(key => key.length > 0);
+
+    const keys = keyPool.length > 0 ? keyPool : (apiKey ? [apiKey] : []);
+
+    if (keys.length === 0) {
       throw new Error(
         'OPENAI_API_KEY is not set. Please add it to your .env file.'
       );
     }
 
-    this.client = new OpenAI({
-      apiKey,
-    });
+    this.clients = keys.map(key => new OpenAI({ apiKey: key }));
+  }
+
+  private getClientWithIndex(): { client: OpenAI; index: number } {
+    const index = this.clients.length === 1 ? 0 : this.clientIndex;
+    const client = this.clients[index];
+
+    if (this.clients.length > 1) {
+      this.clientIndex = (this.clientIndex + 1) % this.clients.length;
+    }
+
+    return { client, index };
+  }
+
+  private async withRetry<T>(
+    fn: (client: OpenAI, clientIndex: number) => Promise<T>,
+    context: string
+  ): Promise<T> {
+    const maxRetries = Number.isFinite(this.maxRetries) && this.maxRetries >= 0 ? this.maxRetries : 4;
+    const baseDelay = Number.isFinite(this.retryBaseMs) && this.retryBaseMs > 0 ? this.retryBaseMs : 500;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      const { client, index } = this.getClientWithIndex();
+
+      try {
+        if (attempt === 0) {
+          logger.info('OpenAI request using key index', {
+            context,
+            keyIndex: index,
+          });
+        }
+        return await fn(client, index);
+      } catch (error: any) {
+        const status = error?.status || error?.response?.status;
+        const isRetryable = status === 429 || (status >= 500 && status <= 504);
+        if (!isRetryable || attempt === maxRetries) {
+          throw error;
+        }
+
+        const jitter = Math.floor(Math.random() * 200);
+        const delay = baseDelay * Math.pow(2, attempt) + jitter;
+        logger.warn('OpenAI request rate-limited or failed, retrying', {
+          context,
+          attempt: attempt + 1,
+          delay_ms: delay,
+          status,
+          keyIndex: index,
+        });
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    throw new Error('OpenAI request failed after retries');
   }
 
   async tailorResume(
@@ -106,22 +167,25 @@ export class OpenAIService {
       const temperature = isCustomMode ? 0.9 : 0.7; // Higher temperature for more creative/free generation in custom mode
       const maxTokens = isCustomMode ? 3000 : 2000; // More tokens for comprehensive resumes with all keywords
 
-      const response = await this.client.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: systemMessage,
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        temperature: temperature,
-        max_tokens: maxTokens,
-        response_format: { type: 'json_object' },
-      });
+      const response = await this.withRetry(
+        (client) => client.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: systemMessage,
+            },
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          temperature: temperature,
+          max_tokens: maxTokens,
+          response_format: { type: 'json_object' },
+        }),
+        'tailorResume'
+      );
 
       const apiTime = Date.now();
       logger.info('OpenAI: API response received', {
@@ -265,22 +329,25 @@ export class OpenAIService {
       const regenerateTemperature = isCustomMode ? 0.9 : (generateFreely ? 0.5 : 0.2);
       const regenerateMaxTokens = 4000;
 
-      const response = await this.client.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: regenerateSystemMessage,
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        temperature: regenerateTemperature,
-        max_tokens: regenerateMaxTokens,
-        response_format: { type: 'json_object' },
-      });
+      const response = await this.withRetry(
+        (client) => client.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: regenerateSystemMessage,
+            },
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          temperature: regenerateTemperature,
+          max_tokens: regenerateMaxTokens,
+          response_format: { type: 'json_object' },
+        }),
+        'regenerateResume'
+      );
 
       const apiTime = Date.now();
       logger.info('OpenAI: Regeneration API response received', {

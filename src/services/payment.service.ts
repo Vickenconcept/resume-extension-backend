@@ -60,19 +60,10 @@ export class PaymentService {
         throw new Error('Paystack secret key is not configured');
       }
 
-      const chargeCurrency = (process.env.PAYSTACK_CHARGE_CURRENCY || 'NGN').toUpperCase();
-      const isUsdCharge = chargeCurrency === 'USD';
-      let amountInSubunit: number;
-
-      if (isUsdCharge) {
-        // USD uses cents
-        amountInSubunit = Math.round(amount * 100);
-      } else {
-        // Convert USD to NGN (Paystack's base currency) - approximate rate
-        // You may want to use a currency conversion API for real-time rates
-        const usdToNgnRate = parseFloat(process.env.USD_TO_NGN_RATE || '1500');
-        amountInSubunit = Math.round(amount * usdToNgnRate * 100); // Convert to kobo (smallest currency unit)
-      }
+      // Convert USD to NGN (Paystack's base currency) - approximate rate
+      // You may want to use a currency conversion API for real-time rates
+      const usdToNgnRate = parseFloat(process.env.USD_TO_NGN_RATE || '1500');
+      const amountInNgn = Math.round(amount * usdToNgnRate * 100); // Convert to kobo (smallest currency unit)
 
       // Ensure secret key is properly formatted
       const secretKey = this.secretKey.trim();
@@ -90,8 +81,7 @@ export class PaymentService {
       logger.info('Initializing Paystack payment', {
         email,
         amountUSD: amount,
-        chargeCurrency,
-        amountSubunit: amountInSubunit,
+        amountNGN: amountInNgn,
         credits: metadata.credits,
         hasSecretKey: !!secretKey,
         keyPrefix: secretKey.substring(0, 10) + '...',
@@ -101,13 +91,12 @@ export class PaymentService {
         `${this.baseUrl}/transaction/initialize`,
         {
           email,
-          amount: amountInSubunit,
-          currency: chargeCurrency,
+          amount: amountInNgn,
+          currency: 'NGN', // Paystack uses NGN, but we'll display USD to users
           metadata: {
             userId: metadata.userId,
             credits: metadata.credits,
             amountUSD: amount,
-            chargeCurrency,
           },
           callback_url: process.env.PAYSTACK_CALLBACK_URL || `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/payment/callback`,
         },

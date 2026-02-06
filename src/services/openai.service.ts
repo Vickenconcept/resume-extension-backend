@@ -1917,11 +1917,11 @@ IMPORTANT:
           const line = compactTextLine(skill);
           if (line) {
             text += '• ' + line + '\n';
-          }
         }
       }
+      }
       if (hasLanguages || hasFrameworks || hasDevops || hasDatabases || hasOther) {
-        text += '\n';
+      text += '\n';
       }
     }
 
@@ -1951,8 +1951,8 @@ IMPORTANT:
           if (titleLine) blockLines.push(titleLine);
           blockLines.push(...bulletLines);
           experienceBlocks.push(blockLines.join('\n'));
+          }
         }
-      }
       if (experienceBlocks.length > 0) {
         text += 'PROFESSIONAL EXPERIENCE\n';
         text += experienceBlocks.join('\n\n') + '\n\n';

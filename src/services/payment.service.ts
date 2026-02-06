@@ -84,7 +84,6 @@ export class PaymentService {
         amountNGN: amountInNgn,
         credits: metadata.credits,
         hasSecretKey: !!secretKey,
-        keyPrefix: secretKey.substring(0, 10) + '...',
       });
 
       const response = await axios.post(

@@ -8,6 +8,7 @@ export class OpenAIService {
   private baseUrl = 'https://api.openai.com/v1';
   private maxRetries = parseInt(process.env.OPENAI_MAX_RETRIES || '4', 10);
   private retryBaseMs = parseInt(process.env.OPENAI_RETRY_BASE_MS || '500', 10);
+  private rotationLogEnabled = (process.env.OPENAI_ROTATION_LOG || '').toLowerCase() === 'true';
 
   constructor() {
     const apiKey = (process.env.OPENAI_API_KEY || '').trim();
@@ -50,10 +51,11 @@ export class OpenAIService {
       const { client, index } = this.getClientWithIndex();
 
       try {
-        if (attempt === 0) {
-          logger.info('OpenAI request using key index', {
+        if (attempt === 0 && this.rotationLogEnabled) {
+          logger.info('OpenAI rotation check', {
             context,
             keyIndex: index,
+            keyCount: this.clients.length,
           });
         }
         return await fn(client, index);
@@ -71,7 +73,6 @@ export class OpenAIService {
           attempt: attempt + 1,
           delay_ms: delay,
           status,
-          keyIndex: index,
         });
         await new Promise(resolve => setTimeout(resolve, delay));
       }

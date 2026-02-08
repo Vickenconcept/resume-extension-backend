@@ -633,7 +633,7 @@ Your task: Return a STRUCTURED JSON object with the regenerated resume data and 
       "proficiency": "Proficiency level"
     }
   ],
-  "coverLetter": "A professional cover letter (3-4 paragraphs) expressing interest, highlighting 2-3 relevant experiences/skills, and showing fit for the role. Use the person's name from the resume."
+  "coverLetter": "A professional cover letter (2 short paragraphs, max 6 sentences total) expressing interest, highlighting 2-3 relevant experiences/skills, and showing fit for the role. Keep it concise and avoid filler. Use the person's name from the resume."
 }
 
 MANDATORY REQUIREMENTS FOR FLEXIBLE MODE (REGENERATION):
@@ -861,7 +861,7 @@ Your task: Return a STRUCTURED JSON object with the regenerated resume data and 
       "proficiency": "Proficiency level"
     }
   ],
-  "coverLetter": "A professional cover letter (3-4 paragraphs) expressing interest, highlighting 2-3 relevant experiences/skills, and showing fit for the role. Use the person's name from the resume."
+  "coverLetter": "A professional cover letter (2 short paragraphs, max 6 sentences total) expressing interest, highlighting 2-3 relevant experiences/skills, and showing fit for the role. Keep it concise and avoid filler. Use the person's name from the resume."
 }
 
 MANDATORY REQUIREMENTS:
@@ -1474,7 +1474,7 @@ Your task: Return a STRUCTURED JSON object with the tailored resume data and cov
       "proficiency": "Proficiency level"
     }
   ],
-  "coverLetter": "A professional cover letter (3-4 paragraphs) expressing interest, highlighting 2-3 relevant experiences/skills, and showing fit for the role. Use the person's name from the resume."
+  "coverLetter": "A professional cover letter (2 short paragraphs, max 6 sentences total) expressing interest, highlighting 2-3 relevant experiences/skills, and showing fit for the role. Keep it concise and avoid filler. Use the person's name from the resume."
 }
 
 MANDATORY REQUIREMENTS FOR CUSTOM MODE:
@@ -1617,7 +1617,7 @@ Your task: Return a STRUCTURED JSON object with the tailored resume data and cov
       "proficiency": "Proficiency level"
     }
   ],
-  "coverLetter": "A professional cover letter (3-4 paragraphs) expressing interest, highlighting 2-3 relevant experiences/skills, and showing fit for the role. Use the person's name from the resume."
+  "coverLetter": "A professional cover letter (2 short paragraphs, max 6 sentences total) expressing interest, highlighting 2-3 relevant experiences/skills, and showing fit for the role. Keep it concise and avoid filler. Use the person's name from the resume."
 }
 
 MANDATORY REQUIREMENTS FOR FLEXIBLE MODE (SMART MATCH):
@@ -1747,7 +1747,7 @@ Your task: Return a STRUCTURED JSON object with the tailored resume data and cov
       "proficiency": "Proficiency level"
     }
   ],
-  "coverLetter": "A professional cover letter (3-4 paragraphs) expressing interest, highlighting 2-3 relevant experiences/skills, and showing fit for the role. Use the person's name from the resume."
+  "coverLetter": "A professional cover letter (2 short paragraphs, max 6 sentences total) expressing interest, highlighting 2-3 relevant experiences/skills, and showing fit for the role. Keep it concise and avoid filler. Use the person's name from the resume."
 }
 
 IMPORTANT:

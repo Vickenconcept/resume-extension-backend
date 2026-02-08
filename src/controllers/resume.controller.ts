@@ -1358,6 +1358,7 @@ export class ResumeController {
                 resumeId: true,
                 filename: true,
                 displayName: true,
+                cloudinaryUrl: true,
                 isDefault: true,
               },
             },

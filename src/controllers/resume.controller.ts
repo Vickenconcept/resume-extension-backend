@@ -1388,6 +1388,7 @@ export class ResumeController {
             resumeId: version.resume.resumeId,
             resumeName: version.resume.displayName || version.resume.filename,
             resumeFilename: version.resume.filename,
+            cloudinaryUrl: version.resume.cloudinaryUrl,
             isResumeDefault: version.resume.isDefault,
             versionName: version.versionName || `Version ${version.id}`,
             isCurrent: version.isCurrent,

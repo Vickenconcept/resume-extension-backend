@@ -20,20 +20,29 @@ export class PaymentController {
         return;
       }
 
-      const { amount, credits } = req.body;
+      const { planId } = req.body;
 
-      if (!amount || !credits || amount <= 0 || credits <= 0) {
-        ApiResponseFormatter.error(res, 'Invalid amount or credits', 400);
+      if (!planId) {
+        ApiResponseFormatter.error(res, 'Payment plan is required', 400);
+        return;
+      }
+
+      const plan = await prisma.paymentPlan.findUnique({
+        where: { id: parseInt(planId, 10) },
+      });
+
+      if (!plan || plan.isActive === false) {
+        ApiResponseFormatter.error(res, 'Invalid or inactive payment plan', 400);
         return;
       }
 
       // Initialize payment with Paystack
       const paymentData = await paymentService.initializePayment(
         req.user.email,
-        amount,
+        plan.amount,
         {
           userId: req.user.id,
-          credits,
+          credits: plan.credits,
         }
       );
 
@@ -42,8 +51,8 @@ export class PaymentController {
         data: {
           userId: req.user.id,
           paystackRef: paymentData.data.reference,
-          amount: amount,
-          credits,
+          amount: plan.amount,
+          credits: plan.credits,
           status: 'pending',
           paystackResponse: paymentData as any,
         },
@@ -135,6 +144,25 @@ export class PaymentController {
       // Update payment record only if status changed
       let updatedPayment = payment;
       if (verification.data.status === 'success' && payment.status !== 'completed') {
+        const expectedAmount = this.convertUsdToNgnKobo(Number(payment.amount));
+        if (verification.data.amount !== expectedAmount) {
+          logger.error('Payment amount mismatch', {
+            paymentId: payment.id,
+            expectedAmount,
+            receivedAmount: verification.data.amount,
+            reference,
+          });
+          await prisma.payment.update({
+            where: { id: payment.id },
+            data: {
+              status: 'failed',
+              paystackResponse: verification as any,
+            },
+          });
+          ApiResponseFormatter.error(res, 'Payment verification failed', 400);
+          return;
+        }
+
         updatedPayment = await prisma.payment.update({
           where: { id: payment.id },
           data: {
@@ -228,6 +256,32 @@ export class PaymentController {
       });
 
       if (payment && verification.data.status === 'success') {
+        if (payment.status === 'completed') {
+          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3002';
+          res.redirect(`${frontendUrl}/payment/success?reference=${reference}`);
+          return;
+        }
+
+        const expectedAmount = this.convertUsdToNgnKobo(Number(payment.amount));
+        if (verification.data.amount !== expectedAmount) {
+          logger.error('Payment amount mismatch (callback)', {
+            paymentId: payment.id,
+            expectedAmount,
+            receivedAmount: verification.data.amount,
+            reference,
+          });
+          await prisma.payment.update({
+            where: { id: payment.id },
+            data: {
+              status: 'failed',
+              paystackResponse: verification as any,
+            },
+          });
+          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3002';
+          res.redirect(`${frontendUrl}/payment/success?reference=${reference}&error=verification_failed`);
+          return;
+        }
+
         // Update payment status
         await prisma.payment.update({
           where: { id: payment.id },
@@ -350,5 +404,10 @@ export class PaymentController {
       logger.error('Get credits error:', error);
       ApiResponseFormatter.error(res, 'Failed to get credit information: ' + error.message, 500);
     }
+  }
+
+  private convertUsdToNgnKobo(amount: number): number {
+    const usdToNgnRate = parseFloat(process.env.USD_TO_NGN_RATE || '1500');
+    return Math.round(amount * usdToNgnRate * 100);
   }
 }

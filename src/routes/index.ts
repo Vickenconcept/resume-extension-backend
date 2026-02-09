@@ -154,6 +154,9 @@ router.get('/payment/credits', authenticate, (req, res) => paymentController.get
 // POST /api/admin/login - Admin login
 router.post('/admin/login', (req, res) => adminController.login(req, res));
 
+// POST /api/admin/logout - Admin logout
+router.post('/admin/logout', adminAuthenticate, (req, res) => adminController.logout(req, res));
+
 // GET /api/admin/stats - Get dashboard statistics
 router.get('/admin/stats', adminAuthenticate, (req, res) => adminController.getStats(req, res));
 

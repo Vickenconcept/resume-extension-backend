@@ -15,7 +15,7 @@ export const adminAuthenticate = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '');
+    const token = req.headers.authorization?.replace('Bearer ', '') || req.cookies?.admin_token;
 
     if (!token) {
       ApiResponseFormatter.error(res, 'Authentication required', 401);

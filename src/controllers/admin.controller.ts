@@ -44,9 +44,9 @@ export class AdminController {
       }
 
       // Generate JWT token
-      const jwtSecret = process.env.JWT_SECRET || 'your-secret-key';
+      const jwtSecret = process.env.JWT_SECRET;
       if (!jwtSecret) {
-        ApiResponseFormatter.error(res, 'JWT_SECRET is not configured', 500);
+        ApiResponseFormatter.error(res, 'Server configuration error', 500);
         return;
       }
       
@@ -57,10 +57,11 @@ export class AdminController {
         { expiresIn: expiresIn } as jwt.SignOptions
       );
 
+      res.cookie('admin_token', token, this.getAdminCookieOptions());
+
       ApiResponseFormatter.success(
         res,
         {
-          token,
           user: {
             id: user.id,
             name: user.name,
@@ -72,7 +73,20 @@ export class AdminController {
       );
     } catch (error: any) {
       logger.error('Admin login error:', error);
-      ApiResponseFormatter.error(res, 'Failed to login: ' + error.message, 500);
+      ApiResponseFormatter.error(res, 'Failed to login', 500);
+    }
+  }
+
+  /**
+   * Admin logout
+   */
+  async logout(req: Request, res: Response): Promise<void> {
+    try {
+      res.clearCookie('admin_token', this.getAdminCookieOptions());
+      ApiResponseFormatter.success(res, null, 'Logout successful');
+    } catch (error: any) {
+      logger.error('Admin logout error:', error);
+      ApiResponseFormatter.error(res, 'Failed to logout', 500);
     }
   }
 
@@ -142,7 +156,7 @@ export class AdminController {
       );
     } catch (error: any) {
       logger.error('Get users error:', error);
-      ApiResponseFormatter.error(res, 'Failed to get users: ' + error.message, 500);
+      ApiResponseFormatter.error(res, 'Failed to get users', 500);
     }
   }
 
@@ -213,7 +227,7 @@ export class AdminController {
       ApiResponseFormatter.success(res, { user }, 'User retrieved successfully');
     } catch (error: any) {
       logger.error('Get user error:', error);
-      ApiResponseFormatter.error(res, 'Failed to get user: ' + error.message, 500);
+      ApiResponseFormatter.error(res, 'Failed to get user', 500);
     }
   }
 
@@ -253,7 +267,7 @@ export class AdminController {
       ApiResponseFormatter.success(res, { user }, 'User updated successfully');
     } catch (error: any) {
       logger.error('Update user error:', error);
-      ApiResponseFormatter.error(res, 'Failed to update user: ' + error.message, 500);
+      ApiResponseFormatter.error(res, 'Failed to update user', 500);
     }
   }
 
@@ -327,7 +341,7 @@ export class AdminController {
       );
     } catch (error: any) {
       logger.error('Get stats error:', error);
-      ApiResponseFormatter.error(res, 'Failed to get statistics: ' + error.message, 500);
+      ApiResponseFormatter.error(res, 'Failed to get statistics', 500);
     }
   }
 
@@ -384,7 +398,7 @@ export class AdminController {
       );
     } catch (error: any) {
       logger.error('Get payments error:', error);
-      ApiResponseFormatter.error(res, 'Failed to get payments: ' + error.message, 500);
+      ApiResponseFormatter.error(res, 'Failed to get payments', 500);
     }
   }
 
@@ -403,7 +417,7 @@ export class AdminController {
       ApiResponseFormatter.success(res, { plans }, 'Payment plans retrieved successfully');
     } catch (error: any) {
       logger.error('Get payment plans error:', error);
-      ApiResponseFormatter.error(res, 'Failed to get payment plans: ' + error.message, 500);
+      ApiResponseFormatter.error(res, 'Failed to get payment plans', 500);
     }
   }
 
@@ -432,7 +446,7 @@ export class AdminController {
       ApiResponseFormatter.success(res, { plan }, 'Payment plan created successfully');
     } catch (error: any) {
       logger.error('Create payment plan error:', error);
-      ApiResponseFormatter.error(res, 'Failed to create payment plan: ' + error.message, 500);
+      ApiResponseFormatter.error(res, 'Failed to create payment plan', 500);
     }
   }
 
@@ -469,7 +483,7 @@ export class AdminController {
       ApiResponseFormatter.success(res, { plan }, 'Payment plan updated successfully');
     } catch (error: any) {
       logger.error('Update payment plan error:', error);
-      ApiResponseFormatter.error(res, 'Failed to update payment plan: ' + error.message, 500);
+      ApiResponseFormatter.error(res, 'Failed to update payment plan', 500);
     }
   }
 
@@ -494,7 +508,7 @@ export class AdminController {
       ApiResponseFormatter.success(res, null, 'Payment plan deleted successfully');
     } catch (error: any) {
       logger.error('Delete payment plan error:', error);
-      ApiResponseFormatter.error(res, 'Failed to delete payment plan: ' + error.message, 500);
+      ApiResponseFormatter.error(res, 'Failed to delete payment plan', 500);
     }
   }
 
@@ -551,7 +565,7 @@ export class AdminController {
       );
     } catch (error: any) {
       logger.error('Get subscriptions error:', error);
-      ApiResponseFormatter.error(res, 'Failed to get subscriptions: ' + error.message, 500);
+      ApiResponseFormatter.error(res, 'Failed to get subscriptions', 500);
     }
   }
 
@@ -582,7 +596,7 @@ export class AdminController {
       ApiResponseFormatter.success(res, { subscription }, 'Subscription updated successfully');
     } catch (error: any) {
       logger.error('Update subscription error:', error);
-      ApiResponseFormatter.error(res, 'Failed to update subscription: ' + error.message, 500);
+      ApiResponseFormatter.error(res, 'Failed to update subscription', 500);
     }
   }
 
@@ -608,7 +622,18 @@ export class AdminController {
       ApiResponseFormatter.success(res, { subscription }, 'Subscription canceled successfully');
     } catch (error: any) {
       logger.error('Cancel subscription error:', error);
-      ApiResponseFormatter.error(res, 'Failed to cancel subscription: ' + error.message, 500);
+      ApiResponseFormatter.error(res, 'Failed to cancel subscription', 500);
     }
+  }
+
+  private getAdminCookieOptions() {
+    const isProduction = process.env.NODE_ENV === 'production';
+    return {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/',
+    } as const;
   }
 }

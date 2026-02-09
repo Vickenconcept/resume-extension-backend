@@ -22,10 +22,12 @@ export class ApiResponseFormatter {
     statusCode: number = 400,
     data: any = null
   ): Response {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const safeError = isProduction && statusCode >= 500 ? 'Internal server error' : error;
     const response: ApiResponse = {
       success: false,
-      error,
-      message: error,
+      error: safeError,
+      message: safeError,
       data,
     };
     return res.status(statusCode).json(response);

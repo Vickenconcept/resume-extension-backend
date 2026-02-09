@@ -14,23 +14,38 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-const allowedOrigins: (string | RegExp)[] = [
+const defaultAllowedOrigins = [
   'http://localhost:3000',
   'http://localhost:3002', // Admin dashboard
   'http://localhost:5173',
   'http://localhost:8000',
   'https://onpagecv.on-forge.com', // Production backend
-  'https://resume.phanrise.com', // Vercel custom domain
-  'https://resume.phanrise.com', // Vercel custom domain
-  /^chrome-extension:\/\/.*$/,
-  /^https:\/\/.*\.ngrok-free\.(app|dev|io)$/,
-  /^https:\/\/.*\.ngrok\.io$/,
-  /^https:\/\/.*\.ngrok/,
-  /^https:\/\/.*\.vercel\.app$/, // Vercel deployments
+  'https://resume.phanrise.com', // Admin/marketing domain
 ];
 
+const extraAllowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const allowedOrigins = Array.from(new Set([...defaultAllowedOrigins, ...extraAllowedOrigins]));
+
 app.use(cors({
-  origin: allowedOrigins.length > 0 ? allowedOrigins : true,
+  origin: (origin, callback) => {
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (origin.startsWith('chrome-extension://')) {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
   allowedHeaders: [
     'Content-Type',
@@ -84,7 +99,10 @@ app.listen(PORT, () => {
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
-const subscriptionService = new SubscriptionService();
-subscriptionService.start();
+const shouldStartSubscriptionWorker = (process.env.SUBSCRIPTION_WORKER_ENABLED || 'true') === 'true';
+if (shouldStartSubscriptionWorker) {
+  const subscriptionService = new SubscriptionService();
+  subscriptionService.start();
+}
 
 export default app;

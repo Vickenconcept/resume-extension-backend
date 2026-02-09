@@ -156,6 +156,12 @@ export class ResumeController {
       const file = req.file;
       const resumeId = `resume_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
+      const isValidFileSignature = this.isValidResumeFile(file);
+      if (!isValidFileSignature) {
+        ApiResponseFormatter.error(res, 'Invalid file content', 422);
+        return;
+      }
+
       // Allow multiple resumes - check if this should be set as default
       // If user has no resumes, this will be default
       const existingResumesCount = await prisma.resume.count({
@@ -220,6 +226,25 @@ export class ResumeController {
       });
       ApiResponseFormatter.error(res, 'Failed to upload resume: ' + errorMessage, 500);
     }
+  }
+
+  private isValidResumeFile(file: Express.Multer.File): boolean {
+    if (!file || !file.buffer || file.buffer.length < 4) {
+      return false;
+    }
+
+    const pdfSignature = file.buffer.slice(0, 4).toString('utf8');
+    if (pdfSignature === '%PDF') {
+      return true;
+    }
+
+    // DOCX is a ZIP file, which starts with "PK"
+    const zipSignature = file.buffer.slice(0, 2).toString('utf8');
+    if (zipSignature === 'PK') {
+      return true;
+    }
+
+    return false;
   }
 
   async tailor(req: Request, res: Response): Promise<void> {

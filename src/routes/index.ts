@@ -8,6 +8,8 @@ import { AdminController } from '../controllers/admin.controller';
 import { authenticate } from '../middleware/auth';
 import { requireAdmin } from '../middleware/admin';
 import { adminAuthenticate } from '../middleware/adminAuth';
+import { adminOriginGuard } from '../middleware/adminOriginGuard';
+import { rateLimit } from '../middleware/rateLimit';
 import { ApiResponseFormatter } from '../utils/response';
 import logger from '../utils/logger';
 
@@ -51,8 +53,9 @@ router.get('/test', (req, res) => {
 });
 
 // Public auth routes
-router.post('/register', (req, res) => authController.register(req, res));
-router.post('/login', (req, res) => authController.login(req, res));
+const authRateLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
+router.post('/register', authRateLimit, (req, res) => authController.register(req, res));
+router.post('/login', authRateLimit, (req, res) => authController.login(req, res));
 
 // Protected auth routes
 router.get('/me', authenticate, (req, res) => authController.me(req, res));
@@ -152,10 +155,11 @@ router.get('/payment/credits', authenticate, (req, res) => paymentController.get
 
 // Admin routes
 // POST /api/admin/login - Admin login
-router.post('/admin/login', (req, res) => adminController.login(req, res));
+const adminLoginRateLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
+router.post('/admin/login', adminOriginGuard, adminLoginRateLimit, (req, res) => adminController.login(req, res));
 
 // POST /api/admin/logout - Admin logout
-router.post('/admin/logout', adminAuthenticate, (req, res) => adminController.logout(req, res));
+router.post('/admin/logout', adminOriginGuard, adminAuthenticate, (req, res) => adminController.logout(req, res));
 
 // GET /api/admin/stats - Get dashboard statistics
 router.get('/admin/stats', adminAuthenticate, (req, res) => adminController.getStats(req, res));
@@ -167,7 +171,7 @@ router.get('/admin/users', adminAuthenticate, (req, res) => adminController.getU
 router.get('/admin/users/:id', adminAuthenticate, (req, res) => adminController.getUser(req, res));
 
 // PUT /api/admin/users/:id - Update user
-router.put('/admin/users/:id', adminAuthenticate, (req, res) => adminController.updateUser(req, res));
+router.put('/admin/users/:id', adminOriginGuard, adminAuthenticate, (req, res) => adminController.updateUser(req, res));
 
 // GET /api/admin/payment-plans - Get payment plans
 router.get('/admin/payment-plans', adminAuthenticate, (req, res) => adminController.getPaymentPlans(req, res));
@@ -178,18 +182,18 @@ router.get('/admin/payments', adminAuthenticate, (req, res) => adminController.g
 router.get('/admin/subscriptions', adminAuthenticate, (req, res) => adminController.getSubscriptions(req, res));
 
 // POST /api/admin/payment-plans - Create payment plan
-router.post('/admin/payment-plans', adminAuthenticate, (req, res) => adminController.createPaymentPlan(req, res));
+router.post('/admin/payment-plans', adminOriginGuard, adminAuthenticate, (req, res) => adminController.createPaymentPlan(req, res));
 
 // PUT /api/admin/payment-plans/:id - Update payment plan
-router.put('/admin/payment-plans/:id', adminAuthenticate, (req, res) => adminController.updatePaymentPlan(req, res));
+router.put('/admin/payment-plans/:id', adminOriginGuard, adminAuthenticate, (req, res) => adminController.updatePaymentPlan(req, res));
 
 // DELETE /api/admin/payment-plans/:id - Delete payment plan
-router.delete('/admin/payment-plans/:id', adminAuthenticate, (req, res) => adminController.deletePaymentPlan(req, res));
+router.delete('/admin/payment-plans/:id', adminOriginGuard, adminAuthenticate, (req, res) => adminController.deletePaymentPlan(req, res));
 
 // PUT /api/admin/subscriptions/:id - Update subscription
-router.put('/admin/subscriptions/:id', adminAuthenticate, (req, res) => adminController.updateSubscription(req, res));
+router.put('/admin/subscriptions/:id', adminOriginGuard, adminAuthenticate, (req, res) => adminController.updateSubscription(req, res));
 
 // POST /api/admin/subscriptions/:id/cancel - Cancel subscription
-router.post('/admin/subscriptions/:id/cancel', adminAuthenticate, (req, res) => adminController.cancelSubscription(req, res));
+router.post('/admin/subscriptions/:id/cancel', adminOriginGuard, adminAuthenticate, (req, res) => adminController.cancelSubscription(req, res));
 
 export default router;

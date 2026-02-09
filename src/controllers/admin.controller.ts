@@ -59,9 +59,12 @@ export class AdminController {
 
       res.cookie('admin_token', token, this.getAdminCookieOptions());
 
+      const includeToken = (process.env.ADMIN_TOKEN_FALLBACK || 'true') === 'true';
+
       ApiResponseFormatter.success(
         res,
         {
+          token: includeToken ? token : undefined,
           user: {
             id: user.id,
             name: user.name,

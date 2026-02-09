@@ -1,11 +1,13 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { PaymentService } from '../services/payment.service';
+import { SubscriptionService } from '../services/subscription.service';
 import { ApiResponseFormatter } from '../utils/response';
 import logger from '../utils/logger';
 
 const prisma = new PrismaClient();
 const paymentService = new PaymentService();
+const subscriptionService = new SubscriptionService();
 
 export class PaymentController {
   /**
@@ -151,6 +153,14 @@ export class PaymentController {
           },
         });
 
+        await subscriptionService.upsertFromPayment({
+          userId: req.user.id,
+          amount: Number(payment.amount),
+          credits: payment.credits,
+          authorizationCode: verification.data.authorization?.authorization_code,
+          customerCode: verification.data.customer?.customer_code,
+        });
+
         logger.info('Credits added to user via verify', {
           userId: req.user.id,
           credits: payment.credits,
@@ -235,6 +245,14 @@ export class PaymentController {
               increment: payment.credits,
             },
           },
+        });
+
+        await subscriptionService.upsertFromPayment({
+          userId: payment.userId,
+          amount: Number(payment.amount),
+          credits: payment.credits,
+          authorizationCode: verification.data.authorization?.authorization_code,
+          customerCode: verification.data.customer?.customer_code,
         });
 
         logger.info('Payment completed via callback', {

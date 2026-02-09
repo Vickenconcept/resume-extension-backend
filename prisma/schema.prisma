@@ -27,6 +27,7 @@ model User {
   payments Payment[]
   usageLogs UsageLog[]
   feedback Feedback[]
+  subscriptions Subscription[]
 
   @@index([role])
   @@map("users")
@@ -139,6 +140,27 @@ model PaymentPlan {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@map("payment_plans")
+}
+
+model Subscription {
+  id                        Int      @id @default(autoincrement())
+  userId                    Int      @map("user_id")
+  status                    String   @default("active") // active, past_due, canceled
+  amount                    Decimal  @db.Decimal(10, 2) // Amount in USD per month
+  credits                   Int      // Credits per month
+  paystackAuthorizationCode String?  @map("paystack_authorization_code")
+  paystackCustomerCode      String?  @map("paystack_customer_code")
+  lastChargedAt             DateTime? @map("last_charged_at")
+  nextChargeAt              DateTime? @map("next_charge_at")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([nextChargeAt])
+  @@map("subscriptions")
 }
 
 model Feedback {

@@ -19,13 +19,26 @@ export interface PaystackVerifyResponse {
     currency: string;
     reference: string;
     status: string;
+    authorization?: {
+      authorization_code: string;
+    };
     customer: {
       email: string;
+      customer_code?: string;
     };
     metadata?: {
       credits?: number;
       userId?: number;
     };
+  };
+}
+
+export interface PaystackChargeResponse {
+  status: boolean;
+  message: string;
+  data: {
+    status: string;
+    reference: string;
   };
 }
 
@@ -60,10 +73,7 @@ export class PaymentService {
         throw new Error('Paystack secret key is not configured');
       }
 
-      // Convert USD to NGN (Paystack's base currency) - approximate rate
-      // You may want to use a currency conversion API for real-time rates
-      const usdToNgnRate = parseFloat(process.env.USD_TO_NGN_RATE || '1500');
-      const amountInNgn = Math.round(amount * usdToNgnRate * 100); // Convert to kobo (smallest currency unit)
+      const amountInNgn = this.convertUsdToNgnKobo(amount);
 
       // Ensure secret key is properly formatted
       const secretKey = this.secretKey.trim();
@@ -120,6 +130,50 @@ export class PaymentService {
   }
 
   /**
+   * Charge a saved authorization (recurring payment)
+   */
+  async chargeAuthorization(options: {
+    authorizationCode: string;
+    email: string;
+    amount: number;
+  }): Promise<PaystackChargeResponse> {
+    try {
+      if (!this.secretKey) {
+        throw new Error('Paystack secret key is not configured');
+      }
+
+      const secretKey = this.secretKey.trim();
+      const authHeader = `Bearer ${secretKey}`;
+      const amountInNgn = this.convertUsdToNgnKobo(options.amount);
+
+      const response = await axios.post(
+        `${this.baseUrl}/transaction/charge_authorization`,
+        {
+          authorization_code: options.authorizationCode,
+          email: options.email,
+          amount: amountInNgn,
+          currency: 'NGN',
+        },
+        {
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      return response.data;
+    } catch (error: any) {
+      logger.error('Paystack charge authorization error:', {
+        error: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+      });
+      throw new Error(`Failed to charge authorization: ${error.response?.data?.message || error.message}`);
+    }
+  }
+
+  /**
    * Verify a Paystack payment
    */
   async verifyPayment(reference: string): Promise<PaystackVerifyResponse> {
@@ -149,6 +203,13 @@ export class PaymentService {
       });
       throw new Error(`Failed to verify payment: ${error.response?.data?.message || error.message}`);
     }
+  }
+
+  private convertUsdToNgnKobo(amount: number): number {
+    // Convert USD to NGN (Paystack's base currency) - approximate rate
+    // You may want to use a currency conversion API for real-time rates
+    const usdToNgnRate = parseFloat(process.env.USD_TO_NGN_RATE || '1500');
+    return Math.round(amount * usdToNgnRate * 100); // Convert to kobo (smallest currency unit)
   }
 
   /**

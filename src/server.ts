@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import routes from './routes';
 import { errorHandler } from './middleware/errorHandler';
 import logger from './utils/logger';
+import { SubscriptionService } from './services/subscription.service';
 
 // Load environment variables
 dotenv.config();
@@ -82,5 +83,8 @@ app.listen(PORT, () => {
   logger.info(`Server running on port ${PORT}`);
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
+
+const subscriptionService = new SubscriptionService();
+subscriptionService.start();
 
 export default app;

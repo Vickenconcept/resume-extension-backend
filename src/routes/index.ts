@@ -171,6 +171,9 @@ router.get('/admin/payment-plans', adminAuthenticate, (req, res) => adminControl
 // GET /api/admin/payments - Get payments
 router.get('/admin/payments', adminAuthenticate, (req, res) => adminController.getPayments(req, res));
 
+// GET /api/admin/subscriptions - Get subscriptions
+router.get('/admin/subscriptions', adminAuthenticate, (req, res) => adminController.getSubscriptions(req, res));
+
 // POST /api/admin/payment-plans - Create payment plan
 router.post('/admin/payment-plans', adminAuthenticate, (req, res) => adminController.createPaymentPlan(req, res));
 
@@ -179,5 +182,11 @@ router.put('/admin/payment-plans/:id', adminAuthenticate, (req, res) => adminCon
 
 // DELETE /api/admin/payment-plans/:id - Delete payment plan
 router.delete('/admin/payment-plans/:id', adminAuthenticate, (req, res) => adminController.deletePaymentPlan(req, res));
+
+// PUT /api/admin/subscriptions/:id - Update subscription
+router.put('/admin/subscriptions/:id', adminAuthenticate, (req, res) => adminController.updateSubscription(req, res));
+
+// POST /api/admin/subscriptions/:id/cancel - Cancel subscription
+router.post('/admin/subscriptions/:id/cancel', adminAuthenticate, (req, res) => adminController.cancelSubscription(req, res));
 
 export default router;

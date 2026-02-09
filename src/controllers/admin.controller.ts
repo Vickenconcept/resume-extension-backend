@@ -497,4 +497,118 @@ export class AdminController {
       ApiResponseFormatter.error(res, 'Failed to delete payment plan: ' + error.message, 500);
     }
   }
+
+  /**
+   * Get subscriptions with pagination
+   */
+  async getSubscriptions(req: Request, res: Response): Promise<void> {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const skip = (page - 1) * limit;
+      const status = (req.query.status as string) || '';
+
+      const where: any = {};
+      if (status) {
+        where.status = status;
+      }
+
+      const [subscriptions, total] = await Promise.all([
+        prisma.subscription.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          },
+        }),
+        prisma.subscription.count({ where }),
+      ]);
+
+      const totalPages = Math.ceil(total / limit);
+
+      ApiResponseFormatter.success(
+        res,
+        {
+          subscriptions,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages,
+            hasNext: page < totalPages,
+            hasPrev: page > 1,
+          },
+        },
+        'Subscriptions retrieved successfully'
+      );
+    } catch (error: any) {
+      logger.error('Get subscriptions error:', error);
+      ApiResponseFormatter.error(res, 'Failed to get subscriptions: ' + error.message, 500);
+    }
+  }
+
+  /**
+   * Update subscription (status, amount, credits, nextChargeAt)
+   */
+  async updateSubscription(req: Request, res: Response): Promise<void> {
+    try {
+      const subscriptionId = parseInt(req.params.id);
+      const { status, amount, credits, nextChargeAt } = req.body;
+
+      if (!subscriptionId) {
+        ApiResponseFormatter.error(res, 'Invalid subscription ID', 400);
+        return;
+      }
+
+      const updateData: any = {};
+      if (status !== undefined) updateData.status = status;
+      if (amount !== undefined) updateData.amount = parseFloat(amount);
+      if (credits !== undefined) updateData.credits = parseInt(credits);
+      if (nextChargeAt !== undefined) updateData.nextChargeAt = new Date(nextChargeAt);
+
+      const subscription = await prisma.subscription.update({
+        where: { id: subscriptionId },
+        data: updateData,
+      });
+
+      ApiResponseFormatter.success(res, { subscription }, 'Subscription updated successfully');
+    } catch (error: any) {
+      logger.error('Update subscription error:', error);
+      ApiResponseFormatter.error(res, 'Failed to update subscription: ' + error.message, 500);
+    }
+  }
+
+  /**
+   * Cancel subscription
+   */
+  async cancelSubscription(req: Request, res: Response): Promise<void> {
+    try {
+      const subscriptionId = parseInt(req.params.id);
+
+      if (!subscriptionId) {
+        ApiResponseFormatter.error(res, 'Invalid subscription ID', 400);
+        return;
+      }
+
+      const subscription = await prisma.subscription.update({
+        where: { id: subscriptionId },
+        data: {
+          status: 'canceled',
+        },
+      });
+
+      ApiResponseFormatter.success(res, { subscription }, 'Subscription canceled successfully');
+    } catch (error: any) {
+      logger.error('Cancel subscription error:', error);
+      ApiResponseFormatter.error(res, 'Failed to cancel subscription: ' + error.message, 500);
+    }
+  }
 }

@@ -102,6 +102,7 @@ export class PaymentService {
           email,
           amount: amountInNgn,
           currency: 'NGN', // Paystack uses NGN, but we'll display USD to users
+          channels: this.getPaymentChannels(),
           metadata: {
             userId: metadata.userId,
             credits: metadata.credits,
@@ -210,6 +211,18 @@ export class PaymentService {
     // You may want to use a currency conversion API for real-time rates
     const usdToNgnRate = parseFloat(process.env.USD_TO_NGN_RATE || '1500');
     return Math.round(amount * usdToNgnRate * 100); // Convert to kobo (smallest currency unit)
+  }
+
+  private getPaymentChannels(): string[] {
+    const rawChannels = (process.env.PAYSTACK_PAYMENT_CHANNELS || '').trim();
+    if (!rawChannels) {
+      return ['card', 'bank_transfer', 'ussd', 'qr', 'mobile_money', 'bank'];
+    }
+
+    return rawChannels
+      .split(',')
+      .map((channel) => channel.trim())
+      .filter(Boolean);
   }
 
   /**

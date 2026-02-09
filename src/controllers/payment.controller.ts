@@ -20,16 +20,31 @@ export class PaymentController {
         return;
       }
 
-      const { planId } = req.body;
+      const { planId, amount, credits } = req.body;
 
-      if (!planId) {
-        ApiResponseFormatter.error(res, 'Payment plan is required', 400);
-        return;
+      let plan = null;
+
+      if (planId) {
+        plan = await prisma.paymentPlan.findUnique({
+          where: { id: parseInt(planId, 10) },
+        });
+      } else if (amount && credits) {
+        const amountValue = parseFloat(amount);
+        const creditsValue = parseInt(credits, 10);
+
+        if (!Number.isFinite(amountValue) || !Number.isFinite(creditsValue)) {
+          ApiResponseFormatter.error(res, 'Invalid amount or credits', 400);
+          return;
+        }
+
+        plan = await prisma.paymentPlan.findFirst({
+          where: {
+            amount: amountValue,
+            credits: creditsValue,
+            isActive: true,
+          },
+        });
       }
-
-      const plan = await prisma.paymentPlan.findUnique({
-        where: { id: parseInt(planId, 10) },
-      });
 
       if (!plan || plan.isActive === false) {
         ApiResponseFormatter.error(res, 'Invalid or inactive payment plan', 400);

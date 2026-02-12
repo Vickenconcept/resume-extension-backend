@@ -140,6 +140,7 @@ export class OpenAIService {
           "- Follow the user's custom instructions as the top priority.",
           "- Use the provided resume and job description as context.",
           "- You may add, remove, or change content to satisfy the user's request while keeping it believable and professional.",
+          "- Write in a human resume style; avoid AI-like phrasing, repetitive structures, and buzzword stacking.",
           "- Output only valid JSON in the requested schema.",
         ].join('\n');
       } else if (generateFreely) {
@@ -149,6 +150,7 @@ export class OpenAIService {
           "- Maximize role alignment and ATS relevance while staying believable.",
           "- You may add limited, low-risk skills or phrases consistent with the candidate's background.",
           "- Keep the resume professional and coherent; avoid keyword stuffing.",
+          "- Write in a human resume style; avoid AI-like phrasing, repetitive structures, and buzzword stacking.",
           "- Output only valid JSON in the requested schema.",
         ].join('\n');
       } else {
@@ -159,6 +161,7 @@ export class OpenAIService {
           "- Rewrite for clarity, professionalism, and role relevance using only existing facts.",
           "- Remove fluff and generic phrasing; keep wording concise and recruiter-friendly.",
           "- Preserve factual accuracy at all times.",
+          "- Write in a human resume style; avoid AI-like phrasing, repetitive structures, and buzzword stacking.",
           "- Output only valid JSON in the requested schema.",
         ].join('\n');
       }
@@ -302,6 +305,7 @@ export class OpenAIService {
           "- Follow the user's custom instructions as the top priority when regenerating the resume.",
           "- Use the current resume, job description, missingKeywords and matchedKeywords as context.",
           "- You may add, remove, or change content to produce a stronger, more targeted resume while keeping it believable and professional.",
+          "- Write in a human resume style; avoid AI-like phrasing, repetitive structures, and buzzword stacking.",
           "- Output only valid JSON in the requested schema.",
         ].join('\n');
       } else if (generateFreely) {
@@ -312,6 +316,7 @@ export class OpenAIService {
           "- Use missingKeywords as guidance, not a checklist; prioritize relevance and credibility.",
           "- You may add limited, low-risk skills or phrases consistent with the candidate's background.",
           "- Keep the resume natural, human-sounding, and recruiter-friendly.",
+          "- Write in a human resume style; avoid AI-like phrasing, repetitive structures, and buzzword stacking.",
           "- Output only valid JSON in the requested schema.",
         ].join('\n');
       } else {
@@ -321,6 +326,7 @@ export class OpenAIService {
           "- Do NOT add any skills, tools, or experience that are not present in the original resume.",
           "- Only rephrase, reorganize, or slightly emphasize existing content to better match the job description.",
           "- Preserve factual accuracy at all times and keep the tone professional.",
+          "- Write in a human resume style; avoid AI-like phrasing, repetitive structures, and buzzword stacking.",
           "- Output only valid JSON in the requested schema.",
         ].join('\n');
       }
@@ -506,6 +512,13 @@ CRITICAL RULES FOR CUSTOM MODE REGENERATION (VERY FREE):
 - Make all changes feel natural and professional while being comprehensive
 - Keep the resume structure consistent
 
+HUMAN-LIKE WRITING REQUIREMENTS:
+- Vary sentence openings and verb choices across bullets; avoid repeated phrasing
+- Avoid generic buzzwords and filler (e.g., "results-driven", "synergy", "cutting-edge", "leverage", "utilize", "proven track record")
+- Prefer concrete, specific phrasing grounded in the resume; avoid overly polished, templated language
+- Keep bullets concise and readable; avoid long, multi-clause stacking
+- Do not mention AI or that the content is generated
+
 CURRENT RESUME TEXT:
 ${resumeText}
 
@@ -545,6 +558,13 @@ ${wantsAllKeywords ? '⚠️ FINAL CHECK: Before returning, verify that EVERY mi
 3. Use missing keywords only as guidance, not a checklist to force in
 4. Preserve all core facts (experiences, companies, dates, projects, education)
 5. The resume must read like a human career strategist positioned the candidate
+
+HUMAN-LIKE WRITING REQUIREMENTS:
+- Vary sentence openings and verb choices across bullets; avoid repeated phrasing
+- Avoid generic buzzwords and filler (e.g., "results-driven", "synergy", "cutting-edge", "leverage", "utilize", "proven track record")
+- Prefer concrete, specific phrasing grounded in the resume; avoid overly polished, templated language
+- Keep bullets concise and readable; avoid long, multi-clause stacking
+- Do not mention AI or that the content is generated
 
 📋 JOB CONTEXT (Use this to guide your rewrite):
 ${roleContext}
@@ -649,6 +669,7 @@ MANDATORY REQUIREMENTS FOR FLEXIBLE MODE (REGENERATION):
 - CREDIBILITY CHECK: The resume must feel truthful, natural, and defensible in an interview
 - NO REPETITION: Each keyword should appear in only ONE experience bullet (if at all) - don't repeat the same keyword across multiple bullets
 - NATURALNESS CHECK: The resume must sound like a human career strategist positioned the candidate, not an AI keyword stuffer
+- HUMAN-LIKE STYLE: Vary verbs and sentence openings; avoid buzzword stacking or templated phrasing
 - If a section doesn't exist in the original resume, use an empty array or omit the field
 - Keep the structure consistent and complete
 - The coverLetter field is MANDATORY - always include it
@@ -675,6 +696,13 @@ You are in STRICT MODE. This means you MUST preserve factual accuracy above all 
 3. Improve ATS alignment while preserving confident, ownership-driven, human tone
 4. Make the resume BETTER than the original - improve clarity, flow, and role alignment
 5. Preserve all core information (experiences, companies, dates, projects, education)
+
+HUMAN-LIKE WRITING REQUIREMENTS:
+- Vary sentence openings and verb choices across bullets; avoid repeated phrasing
+- Avoid generic buzzwords and filler (e.g., "results-driven", "synergy", "cutting-edge", "leverage", "utilize", "proven track record")
+- Prefer concrete, specific phrasing grounded in the resume; avoid overly polished, templated language
+- Keep bullets concise and readable; avoid long, multi-clause stacking
+- Do not mention AI or that the content is generated
 
 🚨 FACTUAL ACCURACY IS MORE IMPORTANT THAN KEYWORD MATCH SCORE
 
@@ -1411,6 +1439,13 @@ CRITICAL RULES FOR CUSTOM MODE (VERY FREE - NO RESTRICTIONS):
 9. Make the resume feel natural and professional while aggressively following user instructions
 10. The custom instructions override ALL other rules - be creative and comprehensive
 
+HUMAN-LIKE WRITING REQUIREMENTS:
+- Vary sentence openings and verb choices across bullets; avoid repeated phrasing
+- Avoid generic buzzwords and filler (e.g., "results-driven", "synergy", "cutting-edge", "leverage", "utilize", "proven track record")
+- Prefer concrete, specific phrasing grounded in the resume; avoid overly polished, templated language
+- Keep bullets concise and readable; avoid long, multi-clause stacking
+- Do not mention AI or that the content is generated
+
 ORIGINAL RESUME:
 ${resumeText}
 
@@ -1553,6 +1588,13 @@ CRITICAL RULES:
 - Do NOT imply authority or accountability beyond the original resume
 ` : ''}
 
+HUMAN-LIKE WRITING REQUIREMENTS:
+- Vary sentence openings and verb choices across bullets; avoid repeated phrasing
+- Avoid generic buzzwords and filler (e.g., "results-driven", "synergy", "cutting-edge", "leverage", "utilize", "proven track record")
+- Prefer concrete, specific phrasing grounded in the resume; avoid overly polished, templated language
+- Keep bullets concise and readable; avoid long, multi-clause stacking
+- Do not mention AI or that the content is generated
+
 ORIGINAL RESUME:
 ${resumeText}
 
@@ -1682,6 +1724,13 @@ CRITICAL RULES FOR STRICT MODE (PROFESSIONAL REWRITE MODE - DEFAULT):
     RULE OF THUMB: If a word/phrase could appear on ANY job posting regardless of role, it's likely noise. If it's specific to the role's requirements and represents a skill/competency, it's meaningful.
 12. In the "other" skills section, ONLY include actual skills, competencies, methodologies, tools, or certifications from the original resume. Ask yourself: "Would this word/phrase make sense on a resume skills section for this role?" If it's a date, location, job board element, or generic filler word, DO NOT include it.
 13. When rephrasing, use the EXACT terminology from job description ONLY if that terminology already exists in the original resume (or is a clear synonym of existing content)
+
+HUMAN-LIKE WRITING REQUIREMENTS:
+- Vary sentence openings and verb choices across bullets; avoid repeated phrasing
+- Avoid generic buzzwords and filler (e.g., "results-driven", "synergy", "cutting-edge", "leverage", "utilize", "proven track record")
+- Prefer concrete, specific phrasing grounded in the resume; avoid overly polished, templated language
+- Keep bullets concise and readable; avoid long, multi-clause stacking
+- Do not mention AI or that the content is generated
 
 ORIGINAL RESUME:
 ${resumeText}

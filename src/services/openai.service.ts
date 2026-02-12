@@ -124,8 +124,9 @@ export class OpenAIService {
 
       // Call OpenAI API
       const apiStartTime = Date.now();
+      const model = (process.env.OPENAI_MODEL || 'gpt-4o-mini').trim();
       logger.info('OpenAI: Making API request', {
-        model: 'gpt-4o-mini',
+        model,
         base_url: this.baseUrl,
         elapsed_ms: apiStartTime - serviceStartTime,
         custom_mode: !!customInstructions && customInstructions.length > 0,
@@ -173,7 +174,7 @@ export class OpenAIService {
 
       const response = await this.withRetry(
         (client) => client.chat.completions.create({
-          model: 'gpt-4o-mini',
+          model,
           messages: [
             {
               role: 'system',
@@ -290,8 +291,9 @@ export class OpenAIService {
 
       // Call OpenAI API
       const apiStartTime = Date.now();
+      const model = (process.env.OPENAI_MODEL || 'gpt-4o-mini').trim();
       logger.info('OpenAI: Making regeneration API request', {
-        model: 'gpt-4o-mini',
+        model,
         base_url: this.baseUrl,
         elapsed_ms: apiStartTime - serviceStartTime,
       });
@@ -338,7 +340,7 @@ export class OpenAIService {
 
       const response = await this.withRetry(
         (client) => client.chat.completions.create({
-          model: 'gpt-4o-mini',
+          model,
           messages: [
             {
               role: 'system',

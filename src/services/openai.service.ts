@@ -172,23 +172,25 @@ export class OpenAIService {
       const temperature = isCustomMode ? 0.9 : 0.7; // Higher temperature for more creative/free generation in custom mode
       const maxTokens = isCustomMode ? 3000 : 2000; // More tokens for comprehensive resumes with all keywords
 
+      const supportsJsonMode = model.toLowerCase().includes('4o') || model.toLowerCase().includes('4.1');
       const response = await this.withRetry(
-        (client) => client.chat.completions.create({
-          model,
-          messages: [
-            {
-              role: 'system',
-              content: systemMessage,
-            },
-            {
-              role: 'user',
-              content: prompt,
-            },
-          ],
-          temperature: temperature,
-          max_tokens: maxTokens,
-          response_format: { type: 'json_object' },
-        }),
+        (client) =>
+          client.chat.completions.create({
+            model,
+            messages: [
+              {
+                role: 'system',
+                content: systemMessage,
+              },
+              {
+                role: 'user',
+                content: prompt,
+              },
+            ],
+            temperature: temperature,
+            max_tokens: maxTokens,
+            ...(supportsJsonMode ? { response_format: { type: 'json_object' } } : {}),
+          }),
         'tailorResume'
       );
 
@@ -338,23 +340,25 @@ export class OpenAIService {
       const regenerateTemperature = isCustomMode ? 0.9 : (generateFreely ? 0.5 : 0.2);
       const regenerateMaxTokens = 4000;
 
+      const supportsJsonMode = model.toLowerCase().includes('4o') || model.toLowerCase().includes('4.1');
       const response = await this.withRetry(
-        (client) => client.chat.completions.create({
-          model,
-          messages: [
-            {
-              role: 'system',
-              content: regenerateSystemMessage,
-            },
-            {
-              role: 'user',
-              content: prompt,
-            },
-          ],
-          temperature: regenerateTemperature,
-          max_tokens: regenerateMaxTokens,
-          response_format: { type: 'json_object' },
-        }),
+        (client) =>
+          client.chat.completions.create({
+            model,
+            messages: [
+              {
+                role: 'system',
+                content: regenerateSystemMessage,
+              },
+              {
+                role: 'user',
+                content: prompt,
+              },
+            ],
+            temperature: regenerateTemperature,
+            max_tokens: regenerateMaxTokens,
+            ...(supportsJsonMode ? { response_format: { type: 'json_object' } } : {}),
+          }),
         'regenerateResume'
       );
 

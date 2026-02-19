@@ -110,8 +110,26 @@ export class SubscriptionService {
       }
 
       for (const subscription of dueSubscriptions) {
+        // Critical check: Authorization code is required for recurring charges
         if (!subscription.paystackAuthorizationCode) {
-          logger.warn('Subscription missing authorization code', {
+          logger.warn('Subscription missing authorization code - cannot charge', {
+            subscriptionId: subscription.id,
+            userId: subscription.userId,
+            email: subscription.user.email,
+          });
+          await prisma.subscription.update({
+            where: { id: subscription.id },
+            data: {
+              status: 'past_due',
+              nextChargeAt: addDays(now, DEFAULT_RETRY_DAYS),
+            },
+          });
+          continue;
+        }
+
+        // Verify user email exists (required for charge_authorization)
+        if (!subscription.user.email) {
+          logger.error('Subscription user missing email - cannot charge', {
             subscriptionId: subscription.id,
             userId: subscription.userId,
           });
@@ -126,13 +144,21 @@ export class SubscriptionService {
         }
 
         try {
+          // Critical: Email must match the one used in original authorization
+          // Paystack enforces strict email matching for charge_authorization
           const chargeResult = await this.paymentService.chargeAuthorization({
             authorizationCode: subscription.paystackAuthorizationCode,
-            email: subscription.user.email,
-            amount: Number(subscription.amount),
+            email: subscription.user.email, // Must match original payment email
+            amount: Number(subscription.amount), // Amount in USD - will be converted to NGN kobo
           });
 
           if (chargeResult.data.status !== 'success') {
+            logger.error('Recurring charge failed', {
+              subscriptionId: subscription.id,
+              userId: subscription.userId,
+              status: chargeResult.data.status,
+              reference: chargeResult.data.reference,
+            });
             throw new Error(`Charge failed with status ${chargeResult.data.status}`);
           }
 

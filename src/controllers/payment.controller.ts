@@ -196,11 +196,32 @@ export class PaymentController {
           },
         });
 
+        // Check if authorization is reusable before saving for recurring payments
+        const authorization = verification.data.authorization;
+        if (authorization?.authorization_code) {
+          if (authorization.reusable === false) {
+            logger.warn('Authorization code is not reusable - recurring payments will not work', {
+              userId: req.user.id,
+              paymentId: payment.id,
+              authorizationCode: authorization.authorization_code,
+              cardType: authorization.card_type,
+            });
+            // Still save it, but log the warning - some cards may not support recurring
+          } else {
+            logger.info('Authorization code is reusable - recurring payments enabled', {
+              userId: req.user.id,
+              paymentId: payment.id,
+              reusable: authorization.reusable,
+              cardType: authorization.card_type,
+            });
+          }
+        }
+
         await subscriptionService.upsertFromPayment({
           userId: req.user.id,
           amount: Number(payment.amount),
           credits: payment.credits,
-          authorizationCode: verification.data.authorization?.authorization_code,
+          authorizationCode: authorization?.authorization_code,
           customerCode: verification.data.customer?.customer_code,
         });
 
@@ -208,6 +229,7 @@ export class PaymentController {
           userId: req.user.id,
           credits: payment.credits,
           paymentId: payment.id,
+          authorizationReusable: authorization?.reusable,
         });
       } else if (verification.data.status !== 'success' && payment.status === 'pending') {
         // Only update to failed if Paystack explicitly says it failed

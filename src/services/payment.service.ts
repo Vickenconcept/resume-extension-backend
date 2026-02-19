@@ -21,6 +21,11 @@ export interface PaystackVerifyResponse {
     status: string;
     authorization?: {
       authorization_code: string;
+      reusable?: boolean; // Critical: Must be true for recurring charges
+      card_type?: string;
+      last4?: string;
+      exp_month?: string;
+      exp_year?: string;
     };
     customer: {
       email: string;
@@ -132,6 +137,15 @@ export class PaymentService {
 
   /**
    * Charge a saved authorization (recurring payment)
+   * 
+   * IMPORTANT REQUIREMENTS:
+   * 1. authorizationCode must be from a previous successful payment with reusable: true
+   * 2. email MUST match the email used in the original authorization (Paystack enforces this strictly)
+   * 3. amount is in USD and will be converted to NGN kobo (smallest currency unit)
+   * 
+   * @param options.authorizationCode - The authorization_code from initial payment verification
+   * @param options.email - User email (must match original payment email exactly)
+   * @param options.amount - Amount in USD (will be converted to NGN kobo)
    */
   async chargeAuthorization(options: {
     authorizationCode: string;
@@ -145,14 +159,24 @@ export class PaymentService {
 
       const secretKey = this.secretKey.trim();
       const authHeader = `Bearer ${secretKey}`;
+      
+      // Convert USD to NGN kobo (smallest currency unit)
+      // Example: $5 USD * 1500 rate * 100 = 750,000 kobo = ₦7,500
       const amountInNgn = this.convertUsdToNgnKobo(options.amount);
+
+      logger.info('Charging authorization for recurring payment', {
+        email: options.email,
+        amountUSD: options.amount,
+        amountNGNKobo: amountInNgn,
+        authorizationCode: options.authorizationCode.substring(0, 10) + '...', // Log partial for security
+      });
 
       const response = await axios.post(
         `${this.baseUrl}/transaction/charge_authorization`,
         {
           authorization_code: options.authorizationCode,
-          email: options.email,
-          amount: amountInNgn,
+          email: options.email, // Critical: Must match original payment email
+          amount: amountInNgn, // Amount in kobo (smallest currency unit)
           currency: 'NGN',
         },
         {
@@ -165,12 +189,27 @@ export class PaymentService {
 
       return response.data;
     } catch (error: any) {
+      const errorMessage = error.response?.data?.message || error.message;
+      const errorData = error.response?.data;
+      
       logger.error('Paystack charge authorization error:', {
-        error: error.message,
-        response: error.response?.data,
+        error: errorMessage,
+        response: errorData,
         status: error.response?.status,
+        email: options.email,
+        // Common errors:
+        // - "Email mismatch" - email doesn't match original authorization
+        // - "Invalid authorization code" - code expired or invalid
+        // - "Insufficient funds" - card has no funds
+        // - "Card expired" - card is expired
       });
-      throw new Error(`Failed to charge authorization: ${error.response?.data?.message || error.message}`);
+      
+      // Provide more specific error messages
+      if (error.response?.status === 400 && errorMessage?.toLowerCase().includes('email')) {
+        throw new Error(`Email mismatch: The email must match the one used in the original payment. Original email required.`);
+      }
+      
+      throw new Error(`Failed to charge authorization: ${errorMessage}`);
     }
   }
 

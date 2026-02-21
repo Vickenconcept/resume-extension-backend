@@ -86,7 +86,7 @@ model ResumeVersion {
 model Token {
   id        Int      @id @default(autoincrement())
   userId    Int      @map("user_id")
-  token     String   @unique
+  token     String   @unique @db.VarChar(768) // JWT length; 768 = max for MySQL unique index (utf8mb4)
   expiresAt DateTime @map("expires_at")
   createdAt DateTime @default(now()) @map("created_at")
 

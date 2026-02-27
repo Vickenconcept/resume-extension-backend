@@ -33,6 +33,7 @@
     "openai": "^4.52.7",
     "pdf-parse": "^1.1.1",
     "puppeteer": "^24.15.0",
+    "resend": "^6.9.2",
     "winston": "^3.14.2"
   },
   "devDependencies": {

@@ -24,6 +24,7 @@ model User {
 
   resumes Resume[]
   tokens  Token[]
+  passwordResetTokens PasswordResetToken[]
   payments Payment[]
   usageLogs UsageLog[]
   feedback Feedback[]
@@ -31,6 +32,21 @@ model User {
 
   @@index([role])
   @@map("users")
+}
+
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  token     String   @unique @db.VarChar(64)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 model Resume {

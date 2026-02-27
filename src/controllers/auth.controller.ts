@@ -5,8 +5,11 @@ import { PrismaClient } from '@prisma/client';
 import { ApiResponseFormatter } from '../utils/response';
 import logger from '../utils/logger';
 import { JwtPayload } from '../types';
+import crypto from 'crypto';
+import { EmailService } from '../services/email.service';
 
 const prisma = new PrismaClient();
+const emailService = new EmailService();
 
 export class AuthController {
   async register(req: Request, res: Response): Promise<void> {
@@ -146,6 +149,112 @@ export class AuthController {
     } catch (error: any) {
       logger.error('Login error:', error);
       ApiResponseFormatter.error(res, 'Failed to login: ' + error.message, 500);
+    }
+  }
+
+  async forgotPassword(req: Request, res: Response): Promise<void> {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        ApiResponseFormatter.error(res, 'Email is required', 422);
+        return;
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { email },
+      });
+
+      // Don't reveal whether the email exists
+      if (!user) {
+        ApiResponseFormatter.success(res, null, 'If that email is registered, a reset link has been sent');
+        return;
+      }
+
+      // Invalidate previous tokens
+      await prisma.passwordResetToken.deleteMany({
+        where: {
+          userId: user.id,
+        },
+      });
+
+      // Generate token
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+
+      await prisma.passwordResetToken.create({
+        data: {
+          userId: user.id,
+          token: rawToken,
+          expiresAt,
+        },
+      });
+
+      await emailService.sendPasswordResetEmail({
+        to: user.email,
+        name: user.name,
+        token: rawToken,
+      });
+
+      ApiResponseFormatter.success(
+        res,
+        null,
+        'If that email is registered, a reset link has been sent'
+      );
+    } catch (error: any) {
+      logger.error('Forgot password error:', error);
+      ApiResponseFormatter.error(res, 'Failed to process request: ' + error.message, 500);
+    }
+  }
+
+  async resetPassword(req: Request, res: Response): Promise<void> {
+    try {
+      const { token, password, password_confirmation } = req.body;
+
+      if (!token || !password || !password_confirmation) {
+        ApiResponseFormatter.error(res, 'Token, password and confirmation are required', 422);
+        return;
+      }
+
+      if (password !== password_confirmation) {
+        ApiResponseFormatter.error(res, 'Password confirmation does not match', 422);
+        return;
+      }
+
+      if (password.length < 8) {
+        ApiResponseFormatter.error(res, 'Password must be at least 8 characters', 422);
+        return;
+      }
+
+      const resetToken = await prisma.passwordResetToken.findUnique({
+        where: { token },
+        include: { user: true },
+      });
+
+      if (!resetToken || resetToken.expiresAt < new Date()) {
+        ApiResponseFormatter.error(res, 'This reset link is invalid or has expired', 400);
+        return;
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id: resetToken.userId },
+          data: { password: hashedPassword },
+        }),
+        prisma.passwordResetToken.deleteMany({
+          where: { userId: resetToken.userId },
+        }),
+        prisma.token.deleteMany({
+          where: { userId: resetToken.userId },
+        }),
+      ]);
+
+      ApiResponseFormatter.success(res, null, 'Password has been reset successfully');
+    } catch (error: any) {
+      logger.error('Reset password error:', error);
+      ApiResponseFormatter.error(res, 'Failed to reset password: ' + error.message, 500);
     }
   }
 

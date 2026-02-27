@@ -56,6 +56,8 @@ router.get('/test', (req, res) => {
 const authRateLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
 router.post('/register', authRateLimit, (req, res) => authController.register(req, res));
 router.post('/login', authRateLimit, (req, res) => authController.login(req, res));
+router.post('/forgot-password', authRateLimit, (req, res) => authController.forgotPassword(req, res));
+router.post('/reset-password', authRateLimit, (req, res) => authController.resetPassword(req, res));
 
 // Protected auth routes
 router.get('/me', authenticate, (req, res) => authController.me(req, res));

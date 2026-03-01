@@ -19,8 +19,8 @@ export class EmailService {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3002';
     const resetUrl = `${frontendUrl}/reset-password?token=${encodeURIComponent(token)}`;
 
-    const { error } = await resend.emails.send({
-      from: process.env.EMAIL_FROM || 'OnPage CV <no-reply@your-domain.com>',
+    const { data, error } = await resend.emails.send({
+      from: process.env.EMAIL_FROM || 'OnPage CV <onboarding@resend.dev>',
       to: [to],
       subject: 'Reset your OnPage CV password',
       html: `
@@ -49,8 +49,15 @@ export class EmailService {
     });
 
     if (error) {
-      logger.error('Failed to send password reset email', { error });
-      throw new Error('Failed to send password reset email');
+      const errMessage = typeof error === 'object' && error !== null && 'message' in error
+        ? (error as { message?: string }).message
+        : String(error);
+      logger.error('Resend failed to send password reset email', {
+        resendError: error,
+        message: errMessage,
+        from: process.env.EMAIL_FROM,
+      });
+      throw new Error(`Failed to send password reset email: ${errMessage}`);
     }
   }
 }

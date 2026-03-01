@@ -180,6 +180,9 @@ router.get('/admin/users/:id', adminAuthenticate, (req, res) => adminController.
 // PUT /api/admin/users/:id - Update user
 router.put('/admin/users/:id', adminOriginGuard, adminAuthenticate, (req, res) => adminController.updateUser(req, res));
 
+// DELETE /api/admin/users/:id - Delete user
+router.delete('/admin/users/:id', adminOriginGuard, adminAuthenticate, (req, res) => adminController.deleteUser(req, res));
+
 // GET /api/admin/payment-plans - Get payment plans
 router.get('/admin/payment-plans', adminAuthenticate, (req, res) => adminController.getPaymentPlans(req, res));
 // GET /api/admin/payments - Get payments

@@ -235,14 +235,14 @@ export class AdminController {
   }
 
   /**
-   * Update user (credits, role, etc.)
+   * Update user (name, credits, role, etc.)
    */
   async updateUser(req: Request, res: Response): Promise<void> {
     try {
       // Admin check is done by middleware
 
       const userId = parseInt(req.params.id);
-      const { credits, role, freeTrialUsed } = req.body;
+      const { name, credits, role, freeTrialUsed } = req.body;
 
       if (!userId) {
         ApiResponseFormatter.error(res, 'Invalid user ID', 400);
@@ -250,6 +250,7 @@ export class AdminController {
       }
 
       const updateData: any = {};
+      if (name !== undefined && typeof name === 'string' && name.trim()) updateData.name = name.trim();
       if (credits !== undefined) updateData.credits = parseInt(credits);
       if (role !== undefined) updateData.role = role;
       if (freeTrialUsed !== undefined) updateData.freeTrialUsed = parseInt(freeTrialUsed);
@@ -271,6 +272,55 @@ export class AdminController {
     } catch (error: any) {
       logger.error('Update user error:', error);
       ApiResponseFormatter.error(res, 'Failed to update user', 500);
+    }
+  }
+
+  /**
+   * Delete user (admin only). Cannot delete self or the last admin.
+   */
+  async deleteUser(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = parseInt(req.params.id);
+      const currentAdminId = (req as any).user?.id;
+
+      if (!userId) {
+        ApiResponseFormatter.error(res, 'Invalid user ID', 400);
+        return;
+      }
+
+      // Prevent deleting yourself
+      if (currentAdminId && currentAdminId === userId) {
+        ApiResponseFormatter.error(res, 'You cannot delete your own account', 400);
+        return;
+      }
+
+      const targetUser = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, role: true },
+      });
+
+      if (!targetUser) {
+        ApiResponseFormatter.error(res, 'User not found', 404);
+        return;
+      }
+
+      // Prevent deleting the last admin
+      if (targetUser.role === 'admin') {
+        const adminCount = await prisma.user.count({ where: { role: 'admin' } });
+        if (adminCount <= 1) {
+          ApiResponseFormatter.error(res, 'Cannot delete the last admin', 400);
+          return;
+        }
+      }
+
+      await prisma.user.delete({
+        where: { id: userId },
+      });
+
+      ApiResponseFormatter.success(res, null, 'User deleted successfully');
+    } catch (error: any) {
+      logger.error('Delete user error:', error);
+      ApiResponseFormatter.error(res, 'Failed to delete user', 500);
     }
   }
 

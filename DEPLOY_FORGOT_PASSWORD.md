@@ -101,10 +101,19 @@ From the app directory on the server (e.g. `current` or the active release):
 
 ```bash
 cd /home/forge/onpagecv.on-forge.com/current
-npx prisma migrate deploy
+npm run prisma:migrate:deploy
 ```
 
-This applies pending migrations (including `20260227000000_add_password_reset_tokens`) and creates `password_reset_tokens`. Then restart the app:
+**Important:** Use `npm run prisma:migrate:deploy` so the **project’s** Prisma (v5) is used. Do **not** run `npx prisma migrate deploy` without a version: that can install Prisma 7, which uses a different config and will fail with this schema.
+
+If Prisma is not installed (e.g. after `npm install --production`), install all deps then run the migrate script:
+
+```bash
+npm install
+npm run prisma:migrate:deploy
+```
+
+Then restart the app:
 
 ```bash
 pm2 restart onpagecv-express

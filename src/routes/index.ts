@@ -59,6 +59,11 @@ router.post('/login', authRateLimit, (req, res) => authController.login(req, res
 router.post('/forgot-password', authRateLimit, (req, res) => authController.forgotPassword(req, res));
 router.post('/reset-password', authRateLimit, (req, res) => authController.resetPassword(req, res));
 
+// Verify forgot-password route is deployed (GET so you can open in browser)
+router.get('/forgot-password', (req, res) => {
+  res.json({ ok: true, message: 'Use POST with body: { "email": "your@email.com" }' });
+});
+
 // Protected auth routes
 router.get('/me', authenticate, (req, res) => authController.me(req, res));
 router.post('/logout', authenticate, (req, res) => authController.logout(req, res));

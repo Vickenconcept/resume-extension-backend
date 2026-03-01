@@ -82,3 +82,62 @@ curl -s -X POST https://onpagecv.on-forge.com/api/forgot-password \
 ## 7. After it works
 
 You can remove the GET verification route from `src/routes/index.ts` (the block that returns `Use POST with body...`) if you don’t want it in production.
+
+---
+
+## 8. Table `password_reset_tokens` does not exist
+
+If you see:
+
+```text
+The table `password_reset_tokens` does not exist in the current database.
+```
+
+the migration for the new table was not run on production. Do one of the following.
+
+### Option A: Run Prisma migrate (recommended)
+
+From the app directory on the server (e.g. `current` or the active release):
+
+```bash
+cd /home/forge/onpagecv.on-forge.com/current
+npx prisma migrate deploy
+```
+
+This applies pending migrations (including `20260227000000_add_password_reset_tokens`) and creates `password_reset_tokens`. Then restart the app:
+
+```bash
+pm2 restart onpagecv-express
+pm2 save
+```
+
+### Option B: Create the table manually (MySQL)
+
+If you prefer not to use migrations, run this SQL on the **production** database (same DB as `DATABASE_URL`):
+
+```sql
+CREATE TABLE `password_reset_tokens` (
+    `id` INTEGER NOT NULL AUTO_INCREMENT,
+    `user_id` INTEGER NOT NULL,
+    `token` VARCHAR(64) NOT NULL,
+    `expires_at` DATETIME(3) NOT NULL,
+    `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    UNIQUE INDEX `password_reset_tokens_token_key`(`token`),
+    INDEX `password_reset_tokens_user_id_idx`(`user_id`),
+    INDEX `password_reset_tokens_token_idx`(`token`),
+    INDEX `password_reset_tokens_expires_at_idx`(`expires_at`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+ALTER TABLE `password_reset_tokens` ADD CONSTRAINT `password_reset_tokens_user_id_fkey` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+```
+
+Then restart the app:
+
+```bash
+pm2 restart onpagecv-express
+pm2 save
+```
+
+After that, “Forgot password” should work.

@@ -1205,31 +1205,7 @@ export class ResumeController {
         }
       }
 
-      // Always create a new version record for each download (snapshot)
-      try {
-        const versionName = `Downloaded ${new Date().toLocaleDateString()} - ${downloadFormat.toUpperCase()}`;
-        const newVersion = await prisma.resumeVersion.create({
-          data: {
-            resumeId: resume.id,
-            versionName,
-            tailoredResumeText: resumeText,
-            coverLetter: coverLetterText || null,
-            isCurrent: false, // Download versions are snapshots, not current editable versions
-          },
-        });
-
-        logger.info('New version record created for download', {
-          resumeId: resume.resumeId,
-          versionId: newVersion.id,
-          format: downloadFormat,
-          versionName,
-        });
-      } catch (versionError: any) {
-        logger.warn('Failed to create version record (continuing with download):', versionError);
-        // Don't fail the download if version creation fails
-      }
-
-      // Send the generated file
+      // Build filename for response and Cloudinary
       const filename = `tailored-resume-${new Date().toISOString().split('T')[0]}.${downloadFormat}`;
       const contentType =
         downloadFormat === 'pdf'
@@ -1242,7 +1218,55 @@ export class ResumeController {
         throw new Error('Invalid file content type');
       }
 
-      // Set headers and send binary data
+      // Upload the generated file to Cloudinary so the version points to the new document (not the default resume)
+      let tailoredDocxUrl: string | null = null;
+      let tailoredPdfUrl: string | null = null;
+      try {
+        const cloudinaryFilename = `tailored-${resume.resumeId}-${Date.now()}.${downloadFormat}`;
+        const mimeType = downloadFormat === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        const uploadedUrl = await fileUploadService.uploadFileContent(
+          fileContent,
+          'tailored-resumes',
+          cloudinaryFilename,
+          mimeType
+        );
+        if (downloadFormat === 'pdf') {
+          tailoredPdfUrl = uploadedUrl;
+        } else {
+          tailoredDocxUrl = uploadedUrl;
+        }
+      } catch (uploadErr: any) {
+        logger.warn('Failed to upload tailored file to Cloudinary (version will have no preview URL):', uploadErr);
+      }
+
+      // Always create a new version record for each download (snapshot) with the new document URL
+      try {
+        const versionName = `Downloaded ${new Date().toLocaleDateString()} - ${downloadFormat.toUpperCase()}`;
+        const newVersion = await prisma.resumeVersion.create({
+          data: {
+            resumeId: resume.id,
+            versionName,
+            tailoredResumeText: resumeText,
+            coverLetter: coverLetterText || null,
+            tailoredDocxUrl,
+            tailoredPdfUrl,
+            isCurrent: false, // Download versions are snapshots, not current editable versions
+          },
+        });
+
+        logger.info('New version record created for download', {
+          resumeId: resume.resumeId,
+          versionId: newVersion.id,
+          format: downloadFormat,
+          versionName,
+          hasTailoredUrl: !!(tailoredDocxUrl || tailoredPdfUrl),
+        });
+      } catch (versionError: any) {
+        logger.warn('Failed to create version record (continuing with download):', versionError);
+        // Don't fail the download if version creation fails
+      }
+
+      // Send the generated file
       res.status(200);
       res.setHeader('Content-Type', contentType);
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -1414,7 +1438,8 @@ export class ResumeController {
             resumeId: version.resume.resumeId,
             resumeName: version.resume.displayName || version.resume.filename,
             resumeFilename: version.resume.filename,
-            cloudinaryUrl: version.resume.cloudinaryUrl,
+            // Use the version's tailored document URL (new resume) when present, else fall back to parent resume URL
+            cloudinaryUrl: version.tailoredDocxUrl || version.tailoredPdfUrl || version.resume.cloudinaryUrl,
             isResumeDefault: version.resume.isDefault,
             versionName: version.versionName || `Version ${version.id}`,
             isCurrent: version.isCurrent,

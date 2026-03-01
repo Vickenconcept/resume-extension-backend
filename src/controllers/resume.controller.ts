@@ -7,9 +7,11 @@ import { ResumeParserService } from '../services/resumeParser.service';
 import { FileUploadService } from '../services/fileUpload.service';
 import { DocumentService } from '../services/document.service';
 import { QualityService } from '../services/quality.service';
+import { EmailService } from '../services/email.service';
 
 const prisma = new PrismaClient();
 const openAIService = new OpenAIService();
+const emailService = new EmailService();
 
 type RateLimitEntry = {
   count: number;
@@ -71,6 +73,8 @@ export class ResumeController {
         select: {
           credits: true,
           freeTrialUsed: true,
+          email: true,
+          name: true,
         },
       });
 
@@ -99,6 +103,13 @@ export class ResumeController {
             usedFreeTrial: true,
           },
         });
+
+        // If they just exhausted free trial, send a polite email to buy credits
+        if (user.freeTrialUsed + 1 === freeTrialLimit) {
+          emailService.sendFreeTrialEndedEmail({ to: user.email, name: user.name }).catch((err) => {
+            logger.warn('Free-trial-ended email failed to send', { userId, error: err?.message });
+          });
+        }
 
         return { hasCredits: true, usedFreeTrial: true };
       }

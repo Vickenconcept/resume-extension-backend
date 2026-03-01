@@ -59,6 +59,11 @@ export class AuthController {
         },
       });
 
+      // Send welcome email (non-blocking; don't fail registration if email fails)
+      emailService.sendWelcomeEmail({ to: user.email, name: user.name }).catch((err) => {
+        logger.warn('Welcome email failed to send', { userId: user.id, error: err?.message });
+      });
+
       // Generate token
       const token = this.generateToken({ userId: user.id, email: user.email });
 

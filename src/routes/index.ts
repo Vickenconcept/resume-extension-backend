@@ -206,4 +206,11 @@ router.put('/admin/subscriptions/:id', adminOriginGuard, adminAuthenticate, (req
 // POST /api/admin/subscriptions/:id/cancel - Cancel subscription
 router.post('/admin/subscriptions/:id/cancel', adminOriginGuard, adminAuthenticate, (req, res) => adminController.cancelSubscription(req, res));
 
+// GET /api/admin/email/templates - Get email templates for composer
+router.get('/admin/email/templates', adminAuthenticate, (req, res) => adminController.getEmailTemplates(req, res));
+// GET /api/admin/email/recipients - Get recipients list (query: filter=all|free_trial_used|no_credits|has_paid)
+router.get('/admin/email/recipients', adminAuthenticate, (req, res) => adminController.getEmailRecipients(req, res));
+// POST /api/admin/email/send - Send composed email
+router.post('/admin/email/send', adminOriginGuard, adminAuthenticate, (req, res) => adminController.sendEmail(req, res));
+
 export default router;

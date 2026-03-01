@@ -4,8 +4,10 @@ import { ApiResponseFormatter } from '../utils/response';
 import logger from '../utils/logger';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { EmailService } from '../services/email.service';
 
 const prisma = new PrismaClient();
+const emailService = new EmailService();
 
 export class AdminController {
   /**
@@ -676,6 +678,135 @@ export class AdminController {
     } catch (error: any) {
       logger.error('Cancel subscription error:', error);
       ApiResponseFormatter.error(res, 'Failed to cancel subscription', 500);
+    }
+  }
+
+  /**
+   * Get email templates for admin composer (3 templates)
+   */
+  async getEmailTemplates(req: Request, res: Response): Promise<void> {
+    try {
+      const templates = emailService.getEmailTemplates();
+      ApiResponseFormatter.success(res, { templates }, 'Templates retrieved');
+    } catch (error: any) {
+      logger.error('Get email templates error:', error);
+      ApiResponseFormatter.error(res, 'Failed to get templates', 500);
+    }
+  }
+
+  /**
+   * Get recipients for admin email (all or by filter). Returns id, name, email.
+   */
+  async getEmailRecipients(req: Request, res: Response): Promise<void> {
+    try {
+      const filter = (req.query.filter as string) || 'all';
+
+      const where: any = { role: 'user' }; // never email admins
+      const freeTrialLimit = parseInt(process.env.FREE_TRIAL_LIMIT || '3', 10);
+
+      if (filter === 'free_trial_used') {
+        where.freeTrialUsed = { gte: freeTrialLimit };
+      } else if (filter === 'no_credits') {
+        where.credits = 0;
+        where.freeTrialUsed = { gte: freeTrialLimit };
+      } else if (filter === 'has_paid') {
+        where.payments = { some: { status: 'completed' } };
+      }
+      // 'all' => no extra where
+
+      const users = await prisma.user.findMany({
+        where,
+        select: { id: true, name: true, email: true },
+        orderBy: { name: 'asc' },
+      });
+
+      ApiResponseFormatter.success(res, { users }, 'Recipients retrieved');
+    } catch (error: any) {
+      logger.error('Get email recipients error:', error);
+      ApiResponseFormatter.error(res, 'Failed to get recipients', 500);
+    }
+  }
+
+  /**
+   * Send email to selected users (admin compose). Body: toAll?, userIds?, filter?, subject, html.
+   */
+  async sendEmail(req: Request, res: Response): Promise<void> {
+    try {
+      const { toAll, userIds, filter, subject, html } = req.body as {
+        toAll?: boolean;
+        userIds?: number[];
+        filter?: string;
+        subject?: string;
+        html?: string;
+      };
+
+      if (!subject || !html) {
+        ApiResponseFormatter.error(res, 'Subject and body are required', 422);
+        return;
+      }
+
+      let users: { id: number; name: string; email: string }[] = [];
+
+      if (toAll === true) {
+        const list = await prisma.user.findMany({
+          where: { role: 'user' },
+          select: { id: true, name: true, email: true },
+        });
+        users = list;
+      } else if (Array.isArray(userIds) && userIds.length > 0) {
+        const list = await prisma.user.findMany({
+          where: { id: { in: userIds }, role: 'user' },
+          select: { id: true, name: true, email: true },
+        });
+        users = list;
+      } else if (filter) {
+        const where: any = { role: 'user' };
+        const freeTrialLimit = parseInt(process.env.FREE_TRIAL_LIMIT || '3', 10);
+        if (filter === 'free_trial_used') where.freeTrialUsed = { gte: freeTrialLimit };
+        else if (filter === 'no_credits') {
+          where.credits = 0;
+          where.freeTrialUsed = { gte: freeTrialLimit };
+        } else if (filter === 'has_paid') {
+          where.payments = { some: { status: 'completed' } };
+        }
+        const list = await prisma.user.findMany({
+          where,
+          select: { id: true, name: true, email: true },
+        });
+        users = list;
+      }
+
+      if (users.length === 0) {
+        ApiResponseFormatter.error(res, 'No recipients selected', 422);
+        return;
+      }
+
+      const sent: number[] = [];
+      const failed: { userId: number; error: string }[] = [];
+
+      for (const u of users) {
+        try {
+          await emailService.sendCustomEmail({
+            to: u.email,
+            subject,
+            html,
+            name: u.name,
+          });
+          sent.push(u.id);
+        } catch (err: any) {
+          failed.push({ userId: u.id, error: err?.message || 'Send failed' });
+          logger.warn('Admin email send failed for user', { userId: u.id, error: err?.message });
+        }
+      }
+
+      ApiResponseFormatter.success(
+        res,
+        { sent: sent.length, failed: failed.length, total: users.length, failedDetails: failed },
+        `Sent to ${sent.length} of ${users.length}`
+      );
+    } catch (error: any) {
+      logger.error('Send email error:', error);
+      ApiResponseFormatter.error(res, 'Failed to send email: ' + (error?.message || 'Unknown error'), 500);
     }
   }
 

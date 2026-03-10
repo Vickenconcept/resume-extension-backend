@@ -5,6 +5,7 @@ import { ResumeController } from '../controllers/resume.controller';
 import { FeedbackController } from '../controllers/feedback.controller';
 import { PaymentController } from '../controllers/payment.controller';
 import { AdminController } from '../controllers/admin.controller';
+import { JvController } from '../controllers/jv.controller';
 import { authenticate } from '../middleware/auth';
 import { requireAdmin } from '../middleware/admin';
 import { adminAuthenticate } from '../middleware/adminAuth';
@@ -19,6 +20,7 @@ const resumeController = new ResumeController();
 const feedbackController = new FeedbackController();
 const paymentController = new PaymentController();
 const adminController = new AdminController();
+const jvController = new JvController();
 
 // Configure multer for file uploads
 const upload = multer({
@@ -160,6 +162,9 @@ router.get('/payment/plans', authenticate, (req, res) => paymentController.getPl
 // GET /api/payment/credits - Get user's credit balance
 router.get('/payment/credits', authenticate, (req, res) => paymentController.getCredits(req, res));
 
+// JV / affiliate request routes
+router.post('/jv/affiliate-request', (req, res) => jvController.createAffiliateRequest(req, res));
+
 // Admin routes
 // POST /api/admin/login - Admin login
 const adminLoginRateLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
@@ -187,6 +192,10 @@ router.delete('/admin/users/:id', adminOriginGuard, adminAuthenticate, (req, res
 router.get('/admin/payment-plans', adminAuthenticate, (req, res) => adminController.getPaymentPlans(req, res));
 // GET /api/admin/payments - Get payments
 router.get('/admin/payments', adminAuthenticate, (req, res) => adminController.getPayments(req, res));
+// GET /api/admin/affiliate-requests - Get affiliate requests
+router.get('/admin/affiliate-requests', adminAuthenticate, (req, res) =>
+  jvController.getAffiliateRequests(req, res)
+);
 
 // GET /api/admin/subscriptions - Get subscriptions
 router.get('/admin/subscriptions', adminAuthenticate, (req, res) => adminController.getSubscriptions(req, res));

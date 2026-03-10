@@ -197,3 +197,15 @@ model Feedback {
   @@index([createdAt])
   @@map("feedback")
 }
+
+model AffiliateRequest {
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String
+  wherePromote String?  @map("where_promote")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([email])
+  @@index([createdAt])
+  @@map("affiliate_requests")
+}

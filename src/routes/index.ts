@@ -6,6 +6,7 @@ import { FeedbackController } from '../controllers/feedback.controller';
 import { PaymentController } from '../controllers/payment.controller';
 import { AdminController } from '../controllers/admin.controller';
 import { JvController } from '../controllers/jv.controller';
+import { JvzooIpnController } from '../controllers/jvzooIpn.controller';
 import { authenticate } from '../middleware/auth';
 import { requireAdmin } from '../middleware/admin';
 import { adminAuthenticate } from '../middleware/adminAuth';
@@ -21,6 +22,7 @@ const feedbackController = new FeedbackController();
 const paymentController = new PaymentController();
 const adminController = new AdminController();
 const jvController = new JvController();
+const jvzooIpnController = new JvzooIpnController();
 
 // Configure multer for file uploads
 const upload = multer({
@@ -164,6 +166,10 @@ router.get('/payment/credits', authenticate, (req, res) => paymentController.get
 
 // JV / affiliate request routes
 router.post('/jv/affiliate-request', (req, res) => jvController.createAffiliateRequest(req, res));
+
+// JVZoo IPN webhook (public, no auth) - JVZIPN v2
+// Final URL: POST /api/ipn/jvzoo
+router.post('/ipn/jvzoo', (req, res) => jvzooIpnController.handle(req, res));
 
 // Admin routes
 // POST /api/admin/login - Admin login

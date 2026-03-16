@@ -7,6 +7,95 @@ const emailFrom = () => process.env.EMAIL_FROM || 'OnPage CV <onboarding@resend.
 const appName = 'OnPage CV';
 
 export class EmailService {
+  async sendJvzooWelcomeEmail(params: {
+    to: string;
+    name: string;
+    appLoginUrl: string;
+    chromeExtensionUrl: string;
+    email: string;
+    passwordPlain: string | null;
+  }): Promise<void> {
+    const { to, name, appLoginUrl, chromeExtensionUrl, email, passwordPlain } = params;
+
+    if (!process.env.RESEND_API_KEY) {
+      logger.error('RESEND_API_KEY is not configured');
+      throw new Error('Email service not configured');
+    }
+
+    const loginDetailsText = passwordPlain
+      ? `Login Email: ${email}\nPassword: ${passwordPlain}\n`
+      : `Login Email: ${email}\nYou can use your existing password.\n`;
+
+    const text = `
+Thank you for your purchase of OnPage CV Pro!
+
+Here are your login details:
+
+${loginDetailsText}
+Login URL: ${appLoginUrl}
+
+Chrome Extension (your product):
+${chromeExtensionUrl}
+
+Next steps:
+1) Install the Chrome extension using the link above.
+2) Log in to your account using the details above.
+3) Start tailoring your resumes directly on job pages.
+
+If you have any questions, just reply to this email.
+`;
+
+    const html = `
+      <div style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; color: #111827;">
+        <h2 style="margin-bottom: 16px;">Thank you for your purchase of <span style="color:#2563eb;">OnPage CV Pro</span>!</h2>
+        <p style="margin-bottom: 12px;">Hi ${name || ''},</p>
+        <p style="margin-bottom: 16px;">Here are your login details:</p>
+        <ul style="margin-bottom: 16px; padding-left: 20px;">
+          <li><strong>Login Email:</strong> ${email}</li>
+          ${
+            passwordPlain
+              ? `<li><strong>Password:</strong> ${passwordPlain}</li>`
+              : `<li>You can use your existing password.</li>`
+          }
+          <li><strong>Login URL:</strong> <a href="${appLoginUrl}" style="color:#2563eb;">${appLoginUrl}</a></li>
+        </ul>
+        <p style="margin-bottom: 8px;"><strong>Chrome Extension (your product):</strong></p>
+        <p style="margin-bottom: 16px;">
+          <a href="${chromeExtensionUrl}" style="color:#2563eb;">${chromeExtensionUrl}</a>
+        </p>
+        <p style="margin-bottom: 8px;"><strong>Next steps:</strong></p>
+        <ol style="margin-left: 20px; margin-bottom: 16px;">
+          <li>Install the Chrome extension using the link above.</li>
+          <li>Log in to your account using the details above.</li>
+          <li>Start tailoring your resumes directly on job pages.</li>
+        </ol>
+        <p style="color:#6b7280; font-size: 14px; margin-top: 16px;">
+          If you have any questions, just reply to this email.
+        </p>
+        <p style="color:#9ca3af; font-size: 12px; margin-top: 24px;">
+          — The ${appName} team
+        </p>
+      </div>
+    `;
+
+    const { error } = await resend.emails.send({
+      from: emailFrom(),
+      to: [to],
+      subject: `Your OnPage CV Pro access & login details`,
+      text,
+      html,
+    });
+
+    if (error) {
+      const errMessage =
+        typeof error === 'object' && error !== null && 'message' in error
+          ? (error as { message?: string }).message
+          : String(error);
+      logger.error('Resend failed to send JVZoo welcome email', { resendError: error, message: errMessage });
+      throw new Error(`Failed to send JVZoo welcome email: ${errMessage}`);
+    }
+  }
+
   async sendWelcomeEmail(params: { to: string; name: string }): Promise<void> {
     const { to, name } = params;
 

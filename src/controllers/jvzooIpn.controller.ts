@@ -8,6 +8,7 @@ import { EmailService } from '../services/email.service';
 const prisma = new PrismaClient();
 const emailService = new EmailService();
 
+// JVZIPN v2 secret key - must match the "Secret" you set in JVZoo product settings
 const JVZOO_SECRET = process.env.JVZOO_SECRET || '';
 const FRONTEND_URL =
   process.env.FRONTEND_URL || process.env.ADMIN_DASHBOARD_URL || 'http://localhost:3002';
@@ -31,9 +32,10 @@ export class JvzooIpnController {
         return;
       }
 
-      const transactionType = data.ctransaction as string | undefined;
-      const email = data.ccustemail as string | undefined;
-      const productId = data.cproditem as string | undefined;
+      // JVZIPN v2 field names
+      const transactionType = data.transaction_type as string | undefined;
+      const email = data.customer_email as string | undefined;
+      const productId = String(data.product_id ?? '') || undefined;
 
       if (!transactionType || !email || !productId) {
         logger.warn('JVZoo IPN missing required fields', {
@@ -70,33 +72,27 @@ export class JvzooIpnController {
    * Verify JVZoo JVZIPN v2 signature
    */
   private verifyJVZoo(data: Record<string, any>): boolean {
+    if (!data.cverify) {
+      return false;
+    }
+
     if (!JVZOO_SECRET) {
       logger.error('JVZOO_SECRET is not configured');
       return false;
     }
 
-    if (!data.cverify) {
-      return false;
-    }
+    const paykey = String(data.paykey ?? '');
+    const customerEmail = String(data.customer_email ?? '');
+    const productName = String(data.product_name ?? '');
+    const transactionType = String(data.transaction_type ?? '');
+    const date = String(data.date ?? '');
 
-    const fields: string[] = [];
-
-    for (const key in data) {
-      if (key === 'cverify') continue;
-      fields.push(key);
-    }
-
-    fields.sort();
-
-    let pop = '';
-    for (const field of fields) {
-      pop += String(data[field] ?? '') + '|';
-    }
-    pop += JVZOO_SECRET;
+    const fieldsString =
+      `${paykey}|${customerEmail}|${productName}|${transactionType}|${date}` + JVZOO_SECRET;
 
     const calculated = crypto
       .createHash('sha1')
-      .update(pop)
+      .update(Buffer.from(fieldsString, 'utf8'))
       .digest('hex')
       .substring(0, 8)
       .toUpperCase();
@@ -104,10 +100,40 @@ export class JvzooIpnController {
     return calculated === String(data.cverify).toUpperCase();
   }
 
+  /*
+   * Legacy v1-style verifier (kept here only for reference, not used):
+   *
+   * private verifyJVZooV1(data: Record<string, any>): boolean {
+   *   if (!data.cverify || !JVZOO_SECRET) return false;
+   *   const fields: string[] = [];
+   *   for (const key in data) {
+   *     if (key === 'cverify') continue;
+   *     fields.push(key);
+   *   }
+   *   fields.sort();
+   *   let pop = '';
+   *   for (const field of fields) {
+   *     pop += String(data[field] ?? '') + '|';
+   *   }
+   *   pop += JVZOO_SECRET;
+   *   const calculated = crypto
+   *     .createHash('sha1')
+   *     .update(pop)
+   *     .digest('hex')
+   *     .substring(0, 8)
+   *     .toUpperCase();
+   *   return calculated === String(data.cverify).toUpperCase();
+   * }
+   */
+
   /**
    * SALE: create user if needed, give 50 main credits, send login + extension email
    */
-  private async handleSale(email: string, productId: string, payload: Record<string, any>): Promise<void> {
+  private async handleSale(
+    email: string,
+    productId: string,
+    payload: Record<string, any>
+  ): Promise<void> {
     // 1) Find or create user
     let user = await prisma.user.findUnique({
       where: { email },
@@ -122,7 +148,9 @@ export class JvzooIpnController {
       user = await prisma.user.create({
         data: {
           email,
-          name: payload.ccustname || email.split('@')[0] || 'OnPage CV user',
+          name: payload.customer_first_name
+            ? `${payload.customer_first_name} ${payload.customer_last_name || ''}`.trim()
+            : email.split('@')[0] || 'OnPage CV user',
           password: passwordHash,
           role: 'user',
           credits: 0,
